@@ -1,0 +1,183 @@
+# docker-compose.yml
+
+services:
+  # API Gateway
+  gateway:
+    build: 
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    container_name: p2p-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - AUTH_SERVICE_URL=http://auth:3001
+      - P2P_SERVICE_URL=http://p2p:3002
+      - WALLET_SERVICE_URL=http://wallet:3003
+      - REDIS_URL=redis:6379
+    depends_on:
+      - auth
+      - p2p
+      - wallet
+      - redis
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  # Auth Service
+  auth:
+    build: 
+      context: ./services/auth
+      dockerfile: Dockerfile
+    container_name: p2p-auth
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=p2padmin
+      - DB_PASSWORD=p2psecure123
+      - DB_NAME=p2p_bolivia
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - JWT_EXPIRY=15m
+      - REFRESH_TOKEN_EXPIRY=168h
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  # P2P Engine Service
+  p2p:
+    build: 
+      context: ./services/p2p
+      dockerfile: Dockerfile
+    container_name: p2p-engine
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=p2padmin
+      - DB_PASSWORD=p2psecure123
+      - DB_NAME=p2p_bolivia
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  # Wallet Service
+  wallet:
+    build: 
+      context: ./services/wallet
+      dockerfile: Dockerfile
+    container_name: p2p-wallet
+    ports:
+      - "3003:3003"
+    environment:
+      - PORT=3003
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=p2padmin
+      - DB_PASSWORD=p2psecure123
+      - DB_NAME=p2p_bolivia
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID}
+      - PAYPAL_SECRET=${PAYPAL_SECRET}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - BANK_LISTENER_URL=http://bank-listener:3004
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  # Bank Listener Service (Placeholder)
+  bank-listener:
+    build: 
+      context: ./services/bank-listener
+      dockerfile: Dockerfile
+    container_name: p2p-bank-listener
+    ports:
+      - "3004:3004"
+    environment:
+      - PORT=3004
+      - WEBHOOK_SECRET=your-webhook-secret
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=p2padmin
+      - DB_PASSWORD=p2psecure123
+      - DB_NAME=p2p_bolivia
+    depends_on:
+      - postgres
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: p2p-postgres
+    environment:
+      - POSTGRES_USER=p2padmin
+      - POSTGRES_PASSWORD=p2psecure123
+      - POSTGRES_DB=p2p_bolivia
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: p2p-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: p2p-rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+networks:
+  p2p-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

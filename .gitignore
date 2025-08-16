@@ -1,0 +1,218 @@
+# =============================================================================
+# P2P Bolivia - GitIgnore File
+# =============================================================================
+
+# =============================================================================
+# Go Files
+# =============================================================================
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Go build cache
+.cache/
+
+# =============================================================================
+# Node.js / Frontend
+# =============================================================================
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Vercel
+.vercel
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Package manager lock files (keep one, ignore others)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# =============================================================================
+# Docker & Infrastructure
+# =============================================================================
+# Docker volumes data
+**/data/
+**/volumes/
+
+# Docker Compose override files
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Docker build cache
+.dockerignore
+
+# =============================================================================
+# Database
+# =============================================================================
+# PostgreSQL data directories
+/data/postgres/
+/postgres-data/
+*.sql.backup
+*.dump
+
+# =============================================================================
+# Logs & Temporary Files
+# =============================================================================
+# Application logs
+logs/
+*.log
+log/
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# =============================================================================
+# IDE & Editor Files
+# =============================================================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# GoLand / IntelliJ IDEA
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# =============================================================================
+# OS Generated Files
+# =============================================================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# =============================================================================
+# Security & Credentials
+# =============================================================================
+# API keys and secrets
+.env.secrets
+.env.keys
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# JWT secrets
+jwt-secret.txt
+secrets/
+
+# PayPal/Stripe credentials
+paypal-config.json
+stripe-config.json
+
+# =============================================================================
+# Project Specific
+# =============================================================================
+# Generated documentation
+docs/generated/
+
+# Test reports
+test-reports/
+coverage/
+*.coverage
+
+# Build artifacts
+bin/
+pkg/
+
+# Local development files
+local/
+dev/
+*.local
+
+# Backup files
+*.backup
+*.bak
+
+# =============================================================================
+# P2P Bolivia Specific
+# =============================================================================
+# Local configuration overrides
+config.local.yml
+config.local.json
+
+# Development databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated QR codes (if storing locally)
+qr-codes/
+uploads/
+
+# Bank integration test files
+bank-test-data/
+mock-responses/
+
+# User uploaded files
+uploads/
+user-files/
+
+# Cache directories
+.cache/
+cache/
+
+# =============================================================================
+# END
+# =============================================================================
