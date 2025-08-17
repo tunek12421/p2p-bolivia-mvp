@@ -12,6 +12,13 @@
 *.so
 *.dylib
 
+# Go compiled binaries (service executables)
+services/auth/auth
+services/p2p/p2p
+services/wallet/wallet
+services/gateway/gateway
+services/bank-listener/bank-listener
+
 # Test binary, built with `go test -c`
 *.test
 
