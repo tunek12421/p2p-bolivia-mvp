@@ -99,9 +99,24 @@ services:
       - PAYPAL_SECRET=${PAYPAL_SECRET}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - BANK_LISTENER_URL=http://bank-listener:3004
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
     depends_on:
       - postgres
       - redis
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  # Frontend Service
+  frontend:
+    build: ./frontend
+    container_name: p2p-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    depends_on:
+      - gateway
     networks:
       - p2p-network
     restart: unless-stopped

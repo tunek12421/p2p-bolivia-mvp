@@ -52,24 +52,6 @@ type CreateOrderRequest struct {
     PaymentMethods []string `json:"payment_methods" binding:"required,min=1"`
 }
 
-// Placeholder MatchingEngine
-type MatchingEngine struct {
-    db    *sql.DB
-    redis *redis.Client
-}
-
-func NewMatchingEngine(db *sql.DB, redis *redis.Client) *MatchingEngine {
-    return &MatchingEngine{db: db, redis: redis}
-}
-
-func (e *MatchingEngine) Start() {
-    log.Println("Matching engine started")
-}
-
-func (e *MatchingEngine) AddOrder(order Order) ([]string, error) {
-    return []string{}, nil
-}
-
 func main() {
     // Database connection
     dbHost := os.Getenv("DB_HOST")
@@ -144,42 +126,19 @@ func (s *Server) setupRoutes() {
         api.POST("/orders", s.authMiddleware(), s.handleCreateOrder)
         api.GET("/orderbook", s.handleGetOrderBook)
         api.GET("/rates", s.handleGetRates)
+        
+        // User-specific routes (protected)
+        api.GET("/user/orders", s.authMiddleware(), s.handleGetUserOrders)
+        api.DELETE("/orders/:id", s.authMiddleware(), s.handleCancelOrder)
+        api.GET("/user/matches", s.authMiddleware(), s.handleGetMatches)
+        api.GET("/user/history", s.authMiddleware(), s.handleGetOrderHistory)
+        api.GET("/user/stats", s.authMiddleware(), s.handleGetTradingStats)
+        
+        // Market data
+        api.GET("/market/depth", s.handleGetMarketDepth)
     }
 }
 
-func (s *Server) handleGetOrders(c *gin.Context) {
-    c.JSON(http.StatusOK, []Order{})
-}
-
-func (s *Server) handleCreateOrder(c *gin.Context) {
-    var req CreateOrderRequest
-    if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-        return
-    }
-    
-    c.JSON(http.StatusCreated, gin.H{"message": "Order created", "order": req})
-}
-
-func (s *Server) handleGetOrderBook(c *gin.Context) {
-    c.JSON(http.StatusOK, gin.H{
-        "buy_orders":  []Order{},
-        "sell_orders": []Order{},
-    })
-}
-
-func (s *Server) handleGetRates(c *gin.Context) {
-    rates := gin.H{
-        "BOB_USD":  0.145,
-        "USD_BOB":  6.90,
-        "USDT_USD": 1.00,
-        "USD_USDT": 1.00,
-        "BOB_USDT": 0.145,
-        "USDT_BOB": 6.90,
-    }
-    
-    c.JSON(http.StatusOK, rates)
-}
 
 func (s *Server) authMiddleware() gin.HandlerFunc {
     return func(c *gin.Context) {

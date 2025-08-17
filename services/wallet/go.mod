@@ -2,7 +2,13 @@ module wallet
 
 go 1.21
 
-require github.com/gin-gonic/gin v1.10.1
+require (
+	github.com/gin-gonic/gin v1.10.1
+	github.com/golang-jwt/jwt/v5 v5.0.0
+	github.com/lib/pq v1.10.9
+	github.com/shopspring/decimal v1.3.1
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
+)
 
 require (
 	github.com/bytedance/sonic v1.11.6 // indirect
