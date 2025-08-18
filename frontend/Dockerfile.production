@@ -1,0 +1,82 @@
+# ==========================================
+# DOCKERFILE OPTIMIZADO PARA PRODUCCIÓN
+# P2P Bolivia Frontend - Next.js Application
+# ==========================================
+
+# Multi-stage build para minimizar el tamaño final
+FROM node:18-alpine AS base
+
+# Instalar dependencias solo cuando es necesario
+FROM base AS deps
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Copiar archivos de dependencias
+COPY package*.json ./
+RUN npm ci --only=production --ignore-scripts
+
+# Build stage - compilar la aplicación
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Variables de entorno para el build
+ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV production
+
+# Construir la aplicación
+RUN npm run build
+
+# Producción - imagen final ultra-ligera
+FROM node:18-alpine AS runner
+WORKDIR /app
+
+# Crear usuario no-root por seguridad
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Instalar solo las dependencias necesarias para producción
+RUN apk add --no-cache \
+    tini \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+# Copiar archivos necesarios desde el builder
+COPY --from=builder /app/next.config.js ./
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+
+# Copiar archivos standalone optimizados
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Variables de entorno para producción
+ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED 1
+ENV PORT 3000
+ENV HOSTNAME "0.0.0.0"
+
+# Security: usar usuario no-root
+USER nextjs
+
+# Healthcheck para monitoreo
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/api/health || exit 1
+
+# Exponer puerto
+EXPOSE 3000
+
+# Usar tini como init para manejo correcto de señales
+ENTRYPOINT ["tini", "--"]
+
+# Comando optimizado para producción
+CMD ["node", "server.js"]
+
+# Metadata
+LABEL \
+  org.opencontainers.image.title="P2P Bolivia Frontend" \
+  org.opencontainers.image.description="Next.js frontend para plataforma P2P de intercambio de criptomonedas" \
+  org.opencontainers.image.version="1.0.0" \
+  org.opencontainers.image.vendor="P2P Bolivia" \
+  org.opencontainers.image.source="https://github.com/p2p-bolivia/frontend"

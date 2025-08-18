@@ -7,13 +7,15 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/shopspring/decimal"
 	_ "github.com/lib/pq"
 )
 
 type Server struct {
-	db     *sql.DB
-	router *gin.Engine
+	db              *sql.DB
+	router          *gin.Engine
+	bankIntegration *BankIntegration
 }
 
 func main() {
@@ -38,11 +40,36 @@ func main() {
 		log.Fatal("Failed to ping database:", err)
 	}
 
+	// Redis connection
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: os.Getenv("REDIS_PASSWORD"),
+		DB:       0,
+	})
+
+	// Bank listener URL
+	listenerURL := os.Getenv("BANK_LISTENER_URL")
+	if listenerURL == "" {
+		listenerURL = "http://bank-listener:8000"
+	}
+
+	// Initialize bank integration
+	bankIntegration := NewBankIntegration(db, rdb, listenerURL)
+
 	// Create server
 	server := &Server{
-		db:     db,
-		router: gin.Default(),
+		db:              db,
+		router:          gin.Default(),
+		bankIntegration: bankIntegration,
 	}
+
+	// Start bank integration
+	bankIntegration.Start()
 
 	// Setup routes
 	server.setupRoutes()
@@ -81,6 +108,10 @@ func (s *Server) setupRoutes() {
 		api.POST("/deposit", s.authMiddleware(), s.handleDeposit)
 		api.POST("/withdraw", s.authMiddleware(), s.handleWithdrawal)
 		api.POST("/transfer", s.authMiddleware(), s.handleTransfer)
+		
+		// Bank integration endpoints
+		api.GET("/deposit-instructions/:currency", s.authMiddleware(), s.handleGetDepositInstructions)
+		api.GET("/pending-deposits", s.authMiddleware(), s.handleGetPendingDeposits)
 		
 		// Payment integration webhooks
 		api.POST("/webhooks/paypal", s.handlePayPalWebhook)
@@ -296,5 +327,64 @@ func (s *Server) creditWalletFromTransaction(externalRef string) {
 	
 	if err != nil {
 		log.Printf("Failed to credit wallet for %s: %v", externalRef, err)
+	}
+}
+
+func (s *Server) handleGetDepositInstructions(c *gin.Context) {
+	userID := c.GetString("user_id")
+	currency := c.Param("currency")
+	
+	// Get amount from query params (optional)
+	amountStr := c.Query("amount")
+	amount := decimal.NewFromFloat(100.0) // Default amount
+	if amountStr != "" {
+		if parsedAmount, err := decimal.NewFromString(amountStr); err == nil {
+			amount = parsedAmount
+		}
+	}
+	
+	instructions, err := s.bankIntegration.GetDepositInstructions(userID, currency, amount)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	
+	c.JSON(200, gin.H{
+		"status": "success",
+		"data":   instructions,
+	})
+}
+
+func (s *Server) handleGetPendingDeposits(c *gin.Context) {
+	userID := c.GetString("user_id")
+	
+	deposits, err := s.bankIntegration.GetPendingDeposits(userID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	
+	c.JSON(200, gin.H{
+		"status":           "success",
+		"pending_deposits": deposits,
+	})
+}
+
+func (s *Server) authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Extract and validate JWT token
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(401, gin.H{"error": "Authorization header required"})
+			c.Abort()
+			return
+		}
+		
+		// Simple validation for development
+		// In production, verify JWT signature and extract user ID
+		userID := "test-user-id" // Replace with actual JWT parsing
+		c.Set("user_id", userID)
+		
+		c.Next()
 	}
 }

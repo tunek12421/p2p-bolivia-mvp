@@ -473,9 +473,17 @@ func (e *MatchingEngine) GetActiveOrders(userID string) ([]Order, error) {
 }
 
 func (e *MatchingEngine) CancelOrder(orderID, userID string) error {
-	// Verify ownership
-	var ownerID string
-	err := e.db.QueryRow("SELECT user_id FROM p2p_orders WHERE id = $1", orderID).Scan(&ownerID)
+	// Start transaction for atomicity
+	tx, err := e.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	
+	// Verify ownership and get order details
+	var ownerID, status string
+	var remainingAmount decimal.Decimal
+	err = tx.QueryRow("SELECT user_id, status, remaining_amount FROM orders WHERE id = $1", orderID).Scan(&ownerID, &status, &remainingAmount)
 	if err != nil {
 		return fmt.Errorf("order not found")
 	}
@@ -484,14 +492,25 @@ func (e *MatchingEngine) CancelOrder(orderID, userID string) error {
 		return fmt.Errorf("unauthorized")
 	}
 	
+	if status != "ACTIVE" && status != "PARTIAL" {
+		return fmt.Errorf("cannot cancel order with status: %s", status)
+	}
+	
 	// Update order status
-	_, err = e.db.Exec("UPDATE orders SET status = 'CANCELLED' WHERE id = $1", orderID)
+	_, err = tx.Exec("UPDATE orders SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1", orderID)
 	if err != nil {
+		return err
+	}
+	
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
 		return err
 	}
 	
 	// Remove from cache
 	e.removeOrderFromCache(orderID)
+	
+	log.Printf("✅ Order cancelled: %s (Remaining: %s)", orderID, remainingAmount.String())
 	
 	return nil
 }

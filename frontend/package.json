@@ -4,9 +4,19 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "next build",
+    "build": "next build && next export",
+    "build:production": "NODE_ENV=production next build",
     "start": "next start -p 3000",
-    "lint": "next lint"
+    "start:production": "NODE_ENV=production next start -p 3000",
+    "lint": "next lint",
+    "lint:fix": "next lint --fix",
+    "type-check": "tsc --noEmit",
+    "analyze": "ANALYZE=true npm run build",
+    "test": "echo 'Tests will be added soon' && exit 0",
+    "docker:build": "docker build -f Dockerfile.production -t p2p-bolivia/frontend:latest .",
+    "docker:run": "docker run -p 3000:3000 --env-file .env.production p2p-bolivia/frontend:latest",
+    "deploy:production": "../deploy-production.sh",
+    "health-check": "curl -f http://localhost:3000/health || exit 1"
   },
   "dependencies": {
     "next": "14.0.4",

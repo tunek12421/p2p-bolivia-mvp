@@ -1,0 +1,398 @@
+# ==========================================
+# DOCKER COMPOSE PARA PRODUCCIÓN
+# P2P Bolivia - Stack Completo Optimizado
+# ==========================================
+
+version: '3.8'
+
+services:
+  # ===============================
+  # REVERSE PROXY & LOAD BALANCER
+  # ===============================
+  nginx:
+    image: nginx:1.21-alpine
+    container_name: p2p-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx
+    depends_on:
+      - frontend
+      - gateway
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===============================
+  # FRONTEND - NEXT.JS OPTIMIZADO
+  # ===============================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.production
+      args:
+        NODE_ENV: production
+    image: p2p-bolivia/frontend:latest
+    container_name: p2p-frontend
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://gateway:8080
+      - NEXT_TELEMETRY_DISABLED=1
+      - PORT=3000
+    depends_on:
+      - gateway
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.2'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===============================
+  # API GATEWAY
+  # ===============================
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    image: p2p-bolivia/gateway:latest
+    container_name: p2p-gateway
+    environment:
+      - PORT=8080
+      - AUTH_SERVICE_URL=http://auth:3001
+      - P2P_SERVICE_URL=http://p2p:3002
+      - WALLET_SERVICE_URL=http://wallet:3003
+      - BANK_LISTENER_URL=http://bank-listener:8000
+      - REDIS_ADDR=redis:6379
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=p2p_user
+      - DB_PASSWORD=secure_password_2024
+      - DB_NAME=p2p_bolivia
+    depends_on:
+      - postgres
+      - redis
+      - auth
+      - p2p
+      - wallet
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===============================
+  # MICROSERVICIOS GO
+  # ===============================
+  auth:
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    image: p2p-bolivia/auth:latest
+    container_name: p2p-auth
+    environment:
+      - PORT=3001
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=p2p_user
+      - DB_PASSWORD=secure_password_2024
+      - DB_NAME=p2p_bolivia
+      - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_key_2024}
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.2'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  p2p:
+    build:
+      context: ./services/p2p
+      dockerfile: Dockerfile
+    image: p2p-bolivia/p2p:latest
+    container_name: p2p-service
+    environment:
+      - PORT=3002
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=p2p_user
+      - DB_PASSWORD=secure_password_2024
+      - DB_NAME=p2p_bolivia
+      - REDIS_ADDR=redis:6379
+      - WALLET_SERVICE_URL=http://wallet:3003
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  wallet:
+    build:
+      context: ./services/wallet
+      dockerfile: Dockerfile
+    image: p2p-bolivia/wallet:latest
+    container_name: p2p-wallet
+    environment:
+      - PORT=3003
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=p2p_user
+      - DB_PASSWORD=secure_password_2024
+      - DB_NAME=p2p_bolivia
+      - REDIS_ADDR=redis:6379
+      - BANK_LISTENER_URL=http://bank-listener:8000
+    depends_on:
+      - postgres
+      - redis
+      - bank-listener
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bank-listener:
+    build:
+      context: ./services/bank-listener
+      dockerfile: Dockerfile
+    image: p2p-bolivia/bank-listener:latest
+    container_name: p2p-bank-listener
+    environment:
+      - PORT=8000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=p2p_user
+      - DB_PASSWORD=secure_password_2024
+      - DB_NAME=p2p_bolivia
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.2'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===============================
+  # BASE DE DATOS - POSTGRESQL
+  # ===============================
+  postgres:
+    image: postgres:15-alpine
+    container_name: p2p-postgres
+    environment:
+      POSTGRES_DB: p2p_bolivia
+      POSTGRES_USER: p2p_user
+      POSTGRES_PASSWORD: secure_password_2024
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U p2p_user -d p2p_bolivia"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===============================
+  # CACHE & MESSAGE BROKER - REDIS
+  # ===============================
+  redis:
+    image: redis:7-alpine
+    container_name: p2p-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.2'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===============================
+  # MONITORING - HEALTH DASHBOARD
+  # ===============================
+  health-monitor:
+    image: alpine:latest
+    container_name: p2p-health-monitor
+    command: |
+      sh -c "
+        apk add --no-cache curl jq &&
+        while true; do
+          echo '=== Health Check Report ===' &&
+          echo 'Frontend:' && curl -sf http://frontend:3000/health || echo 'DOWN' &&
+          echo 'Gateway:' && curl -sf http://gateway:8080/health || echo 'DOWN' &&
+          echo 'Auth:' && curl -sf http://auth:3001/health || echo 'DOWN' &&
+          echo 'P2P:' && curl -sf http://p2p:3002/health || echo 'DOWN' &&
+          echo 'Wallet:' && curl -sf http://wallet:3003/health || echo 'DOWN' &&
+          echo 'Bank Listener:' && curl -sf http://bank-listener:8000/health || echo 'DOWN' &&
+          echo '=========================' &&
+          sleep 60
+        done
+      "
+    depends_on:
+      - frontend
+      - gateway
+      - auth
+      - p2p
+      - wallet
+      - bank-listener
+    restart: unless-stopped
+    networks:
+      - p2p_network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.1'
+
+# ===============================
+# VOLÚMENES PERSISTENTES
+# ===============================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  nginx_cache:
+    driver: local
+
+# ===============================
+# RED INTERNA
+# ===============================
+networks:
+  p2p_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
