@@ -53,7 +53,7 @@ func (e *MatchingEngine) AddOrder(order Order) ([]string, error) {
 	
 	// Insert order into database
 	query := `
-		INSERT INTO orders (id, user_id, type, currency_from, currency_to, amount, 
+		INSERT INTO orders (id, user_id, order_type, currency_from, currency_to, amount, 
 			remaining_amount, rate, min_amount, max_amount, payment_methods, status, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`
@@ -314,9 +314,9 @@ func (e *MatchingEngine) GetOrderBook(currencyFrom, currencyTo string) (OrderBoo
 	
 	// Get from database
 	query := `
-		SELECT id, user_id, type, currency_from, currency_to, amount, remaining_amount,
+		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
 			rate, min_amount, max_amount, payment_methods, status, created_at
-		FROM orders 
+		FROM p2p_orders 
 		WHERE currency_from = $1 AND currency_to = $2 AND status = 'ACTIVE'
 		ORDER BY rate ASC, created_at ASC
 	`
@@ -394,9 +394,9 @@ func (e *MatchingEngine) matchingLoop() {
 
 func (e *MatchingEngine) processActiveOrders() {
 	query := `
-		SELECT id, user_id, type, currency_from, currency_to, amount, remaining_amount,
+		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
 			rate, min_amount, max_amount, payment_methods, status, created_at
-		FROM orders 
+		FROM p2p_orders 
 		WHERE status = 'ACTIVE' 
 		ORDER BY created_at ASC
 	`
@@ -439,9 +439,9 @@ func (e *MatchingEngine) processActiveOrders() {
 
 func (e *MatchingEngine) GetActiveOrders(userID string) ([]Order, error) {
 	query := `
-		SELECT id, user_id, type, currency_from, currency_to, amount, remaining_amount,
+		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
 			rate, min_amount, max_amount, payment_methods, status, created_at
-		FROM orders 
+		FROM p2p_orders 
 		WHERE user_id = $1 AND status IN ('ACTIVE', 'PARTIAL')
 		ORDER BY created_at DESC
 	`
@@ -475,7 +475,7 @@ func (e *MatchingEngine) GetActiveOrders(userID string) ([]Order, error) {
 func (e *MatchingEngine) CancelOrder(orderID, userID string) error {
 	// Verify ownership
 	var ownerID string
-	err := e.db.QueryRow("SELECT user_id FROM orders WHERE id = $1", orderID).Scan(&ownerID)
+	err := e.db.QueryRow("SELECT user_id FROM p2p_orders WHERE id = $1", orderID).Scan(&ownerID)
 	if err != nil {
 		return fmt.Errorf("order not found")
 	}

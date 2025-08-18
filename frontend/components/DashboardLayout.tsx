@@ -22,11 +22,11 @@ interface DashboardLayoutProps {
 }
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
-  { name: 'Trade', href: '/trade', icon: ArrowsRightLeftIcon },
-  { name: 'Wallet', href: '/wallet', icon: CurrencyDollarIcon },
-  { name: 'Orders', href: '/trade/orders', icon: ClockIcon },
-  { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
+  { name: 'Panel', href: '/dashboard', icon: HomeIcon },
+  { name: 'Intercambiar', href: '/trade', icon: ArrowsRightLeftIcon },
+  { name: 'Billetera', href: '/wallet', icon: CurrencyDollarIcon },
+  { name: 'Órdenes', href: '/trade/orders', icon: ClockIcon },
+  { name: 'Analíticas', href: '/analytics', icon: ChartBarIcon },
 ]
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -37,7 +37,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const handleLogout = () => {
     logout()
     router.push('/')
-    toast.success('Logged out successfully')
+    toast.success('Sesión cerrada exitosamente')
   }
 
   const isActivePath = (path: string) => {
@@ -144,21 +144,21 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 className="group flex items-center px-2 py-2 text-sm font-medium text-gray-600 rounded-md hover:text-gray-900 hover:bg-gray-50"
               >
                 <UserIcon className="mr-3 h-5 w-5 text-gray-400 group-hover:text-gray-500" />
-                Profile
+                Perfil
               </Link>
               <Link
                 href="/settings"
                 className="group flex items-center px-2 py-2 text-sm font-medium text-gray-600 rounded-md hover:text-gray-900 hover:bg-gray-50"
               >
                 <Cog6ToothIcon className="mr-3 h-5 w-5 text-gray-400 group-hover:text-gray-500" />
-                Settings
+                Configuración
               </Link>
               <button
                 onClick={handleLogout}
                 className="w-full group flex items-center px-2 py-2 text-sm font-medium text-gray-600 rounded-md hover:text-gray-900 hover:bg-gray-50"
               >
                 <ArrowRightOnRectangleIcon className="mr-3 h-5 w-5 text-gray-400 group-hover:text-gray-500" />
-                Sign Out
+                Cerrar Sesión
               </button>
             </div>
           </div>

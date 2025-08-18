@@ -39,37 +39,37 @@ export default function RegisterPage() {
     const { firstName, lastName, email, password, confirmPassword } = formData
 
     if (!firstName.trim()) {
-      toast.error('First name is required')
+      toast.error('El nombre es requerido')
       return false
     }
 
     if (!lastName.trim()) {
-      toast.error('Last name is required')
+      toast.error('El apellido es requerido')
       return false
     }
 
     if (!email.trim()) {
-      toast.error('Email is required')
+      toast.error('El email es requerido')
       return false
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      toast.error('Please enter a valid email address')
+      toast.error('Por favor ingresa un email válido')
       return false
     }
 
     if (password.length < 6) {
-      toast.error('Password must be at least 6 characters long')
+      toast.error('La contraseña debe tener al menos 6 caracteres')
       return false
     }
 
     if (password !== confirmPassword) {
-      toast.error('Passwords do not match')
+      toast.error('Las contraseñas no coinciden')
       return false
     }
 
     if (!agreedToTerms) {
-      toast.error('Please agree to the Terms of Service and Privacy Policy')
+      toast.error('Por favor acepta los Términos de Servicio y Política de Privacidad')
       return false
     }
 
@@ -79,28 +79,54 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    console.log('📝 FORM: Registration form submitted')
+    console.log('📝 FORM: Form data:', {
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      email: formData.email,
+      phone: formData.phone,
+      passwordLength: formData.password?.length,
+      confirmPasswordLength: formData.confirmPassword?.length,
+      agreedToTerms
+    })
+    
     if (!validateForm()) {
+      console.log('❌ FORM: Form validation failed')
       return
     }
 
+    console.log('✅ FORM: Form validation passed, starting registration')
     setIsLoading(true)
     
     try {
-      const success = await register({
+      const registrationData = {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
         email: formData.email.trim().toLowerCase(),
         phone: formData.phone.trim() || undefined,
         password: formData.password,
+      }
+      
+      console.log('📤 FORM: Calling register function with data:', {
+        ...registrationData,
+        password: '[HIDDEN]'
       })
       
+      const success = await register(registrationData)
+      
+      console.log('📥 FORM: Register function returned:', success)
+      
       if (success) {
+        console.log('🎯 FORM: Registration successful, redirecting to dashboard')
         router.push('/dashboard')
+      } else {
+        console.log('❌ FORM: Registration failed but no error thrown')
       }
     } catch (error) {
-      console.error('Registration error:', error)
+      console.error('💥 FORM: Registration error caught:', error)
     } finally {
       setIsLoading(false)
+      console.log('🏁 FORM: Registration process completed, loading state cleared')
     }
   }
 
@@ -122,11 +148,11 @@ export default function RegisterPage() {
   }
 
   const getPasswordStrengthText = (strength: number) => {
-    if (strength === 0) return 'Very Weak'
-    if (strength === 1) return 'Weak'
-    if (strength === 2) return 'Fair'
-    if (strength === 3) return 'Good'
-    return 'Strong'
+    if (strength === 0) return 'Muy Débil'
+    if (strength === 1) return 'Débil'
+    if (strength === 2) return 'Regular'
+    if (strength === 3) return 'Buena'
+    return 'Fuerte'
   }
 
   if (user) {
@@ -143,10 +169,10 @@ export default function RegisterPage() {
             <span className="ml-2 text-2xl font-bold">P2P Bolivia</span>
           </Link>
           <h2 className="mt-6 text-3xl font-bold text-gray-900">
-            Create your account
+            Crea tu cuenta
           </h2>
           <p className="mt-2 text-gray-600">
-            Join thousands of traders on P2P Bolivia
+            Únete a miles de traders en P2P Bolivia
           </p>
         </div>
 
@@ -157,7 +183,7 @@ export default function RegisterPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-2">
-                  First Name
+                  Nombre
                 </label>
                 <input
                   id="firstName"
@@ -166,7 +192,7 @@ export default function RegisterPage() {
                   autoComplete="given-name"
                   required
                   className="input"
-                  placeholder="First name"
+                  placeholder="Nombre"
                   value={formData.firstName}
                   onChange={handleInputChange}
                   disabled={isLoading}
@@ -174,7 +200,7 @@ export default function RegisterPage() {
               </div>
               <div>
                 <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-2">
-                  Last Name
+                  Apellido
                 </label>
                 <input
                   id="lastName"
@@ -183,7 +209,7 @@ export default function RegisterPage() {
                   autoComplete="family-name"
                   required
                   className="input"
-                  placeholder="Last name"
+                  placeholder="Apellido"
                   value={formData.lastName}
                   onChange={handleInputChange}
                   disabled={isLoading}
@@ -194,7 +220,7 @@ export default function RegisterPage() {
             {/* Email */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
+                Dirección de Email
               </label>
               <input
                 id="email"
@@ -203,7 +229,7 @@ export default function RegisterPage() {
                 autoComplete="email"
                 required
                 className="input"
-                placeholder="Enter your email"
+                placeholder="Ingresa tu email"
                 value={formData.email}
                 onChange={handleInputChange}
                 disabled={isLoading}
@@ -213,7 +239,7 @@ export default function RegisterPage() {
             {/* Phone (optional) */}
             <div>
               <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                Phone Number <span className="text-gray-400">(Optional)</span>
+                Número de Teléfono <span className="text-gray-400">(Opcional)</span>
               </label>
               <input
                 id="phone"
@@ -231,7 +257,7 @@ export default function RegisterPage() {
             {/* Password */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
+                Contraseña
               </label>
               <div className="relative">
                 <input
@@ -241,7 +267,7 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   required
                   className="input pr-10"
-                  placeholder="Create a password"
+                  placeholder="Crea una contraseña"
                   value={formData.password}
                   onChange={handleInputChange}
                   disabled={isLoading}
@@ -263,7 +289,7 @@ export default function RegisterPage() {
               {formData.password && (
                 <div className="mt-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">Password strength:</span>
+                    <span className="text-gray-600">Fortaleza de la contraseña:</span>
                     <span className={`font-medium ${
                       passwordStrength(formData.password) >= 3 ? 'text-green-600' : 'text-gray-600'
                     }`}>
@@ -289,7 +315,7 @@ export default function RegisterPage() {
             {/* Confirm Password */}
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
-                Confirm Password
+                Confirmar Contraseña
               </label>
               <div className="relative">
                 <input
@@ -299,7 +325,7 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   required
                   className="input pr-10"
-                  placeholder="Confirm your password"
+                  placeholder="Confirma tu contraseña"
                   value={formData.confirmPassword}
                   onChange={handleInputChange}
                   disabled={isLoading}
@@ -323,10 +349,10 @@ export default function RegisterPage() {
                   {formData.password === formData.confirmPassword ? (
                     <>
                       <CheckCircleIcon className="h-4 w-4 text-green-500 mr-2" />
-                      <span className="text-sm text-green-600">Passwords match</span>
+                      <span className="text-sm text-green-600">Las contraseñas coinciden</span>
                     </>
                   ) : (
-                    <span className="text-sm text-red-600">Passwords do not match</span>
+                    <span className="text-sm text-red-600">Las contraseñas no coinciden</span>
                   )}
                 </div>
               )}
@@ -345,13 +371,13 @@ export default function RegisterPage() {
               </div>
               <div className="ml-3 text-sm">
                 <label htmlFor="agreedToTerms" className="text-gray-700">
-                  I agree to the{' '}
+                  Acepto los{' '}
                   <Link href="/terms" className="text-primary-600 hover:text-primary-500">
-                    Terms of Service
+                    Términos de Servicio
                   </Link>{' '}
-                  and{' '}
+                  y la{' '}
                   <Link href="/privacy" className="text-primary-600 hover:text-primary-500">
-                    Privacy Policy
+                    Política de Privacidad
                   </Link>
                 </label>
               </div>
@@ -365,10 +391,10 @@ export default function RegisterPage() {
               {isLoading ? (
                 <div className="flex items-center">
                   <div className="loading-spinner w-4 h-4 mr-2"></div>
-                  Creating account...
+                  Creando cuenta...
                 </div>
               ) : (
-                'Create Account'
+                'Crear Cuenta'
               )}
             </button>
           </form>
@@ -379,7 +405,7 @@ export default function RegisterPage() {
                 <div className="w-full border-t border-gray-300" />
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Already have an account?</span>
+                <span className="px-2 bg-white text-gray-500">¿Ya tienes una cuenta?</span>
               </div>
             </div>
 
@@ -388,7 +414,7 @@ export default function RegisterPage() {
                 href="/auth/login"
                 className="w-full flex justify-center py-3 px-4 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
               >
-                Sign in to your account
+                Inicia sesión en tu cuenta
               </Link>
             </div>
           </div>
@@ -397,8 +423,8 @@ export default function RegisterPage() {
         {/* Security notice */}
         <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="text-sm text-green-800">
-            <p className="font-medium mb-1">🔒 Your security is our priority</p>
-            <p>Your personal information is encrypted and stored securely. We never share your data with third parties.</p>
+            <p className="font-medium mb-1">🔒 Tu seguridad es nuestra prioridad</p>
+            <p>Tu información personal está encriptada y almacenada de forma segura. Nunca compartimos tus datos con terceros.</p>
           </div>
         </div>
 

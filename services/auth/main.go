@@ -67,6 +67,11 @@ func (s *Server) setupRoutes() {
     s.router.GET("/health", func(c *gin.Context) {
         c.JSON(200, gin.H{"status": "healthy", "service": "auth"})
     })
+    
+    // Debug route
+    s.router.GET("/debug", func(c *gin.Context) {
+        c.JSON(200, gin.H{"message": "Debug route working"})
+    })
 
     // Auth routes
     api := s.router.Group("/api/v1")
@@ -76,6 +81,9 @@ func (s *Server) setupRoutes() {
         api.POST("/refresh", s.handleRefresh)
         api.POST("/logout", s.handleLogout)
         api.POST("/verify-email", s.handleVerifyEmail)
+        api.GET("/debug-me", func(c *gin.Context) {
+            c.JSON(200, gin.H{"message": "Debug /me route working"})
+        })
         api.GET("/me", s.authMiddleware(), s.handleGetProfile)
         api.PUT("/profile", s.authMiddleware(), s.handleUpdateProfile)
     }

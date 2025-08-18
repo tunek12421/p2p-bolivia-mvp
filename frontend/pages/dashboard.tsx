@@ -62,24 +62,42 @@ export default function DashboardPage() {
   }
 
   const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
+    // Map crypto currencies to valid ISO codes for formatting
+    const currencyMapping: { [key: string]: string } = {
+      'BOB': 'USD', // Format as USD but replace symbol
+      'USDT': 'USD', // Format as USD but replace symbol
+      'USD': 'USD'
+    }
+    
+    const formatCurrencyCode = currencyMapping[currency] || 'USD'
+    
+    let formatted = new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: currency === 'BOB' ? 'USD' : currency,
+      currency: formatCurrencyCode,
       minimumFractionDigits: currency === 'BOB' ? 2 : 4,
       maximumFractionDigits: currency === 'BOB' ? 2 : 4,
-    }).format(amount).replace('$', currency === 'BOB' ? 'Bs. ' : '$')
+    }).format(amount)
+    
+    // Replace the dollar symbol with appropriate currency symbol
+    if (currency === 'BOB') {
+      formatted = formatted.replace('$', 'Bs. ')
+    } else if (currency === 'USDT') {
+      formatted = formatted.replace('$', 'USDT ')
+    }
+    
+    return formatted
   }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'ACTIVE':
-        return <span className="badge-primary">Active</span>
+        return <span className="badge-primary">Activa</span>
       case 'FILLED':
-        return <span className="badge-success">Filled</span>
+        return <span className="badge-success">Completada</span>
       case 'CANCELLED':
-        return <span className="badge-danger">Cancelled</span>
+        return <span className="badge-danger">Cancelada</span>
       case 'PARTIAL':
-        return <span className="badge-warning">Partial</span>
+        return <span className="badge-warning">Parcial</span>
       default:
         return <span className="badge">{status}</span>
     }
@@ -101,10 +119,10 @@ export default function DashboardPage() {
         {/* Welcome Section */}
         <div className="bg-gradient-to-r from-primary-600 to-primary-800 rounded-lg p-6 text-white">
           <h1 className="text-2xl font-bold mb-2">
-            Welcome back, {user?.firstName}!
+            ¡Bienvenido de vuelta, {user?.firstName}!
           </h1>
           <p className="text-primary-100">
-            Ready to start trading? Check out your portfolio and recent activity below.
+            ¿Listo para comenzar a intercambiar? Revisa tu portafolio y actividad reciente a continuación.
           </p>
         </div>
 
@@ -117,7 +135,7 @@ export default function DashboardPage() {
                   <ChartBarIcon className="w-6 h-6 text-primary-600" />
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm text-gray-600">Total Orders</p>
+                  <p className="text-sm text-gray-600">Órdenes Totales</p>
                   <p className="text-2xl font-bold text-gray-900">{stats.total_orders}</p>
                 </div>
               </div>
@@ -129,7 +147,7 @@ export default function DashboardPage() {
                   <ArrowUpIcon className="w-6 h-6 text-success-600" />
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm text-gray-600">Active Orders</p>
+                  <p className="text-sm text-gray-600">Órdenes Activas</p>
                   <p className="text-2xl font-bold text-gray-900">{stats.active_orders}</p>
                 </div>
               </div>
@@ -141,8 +159,8 @@ export default function DashboardPage() {
                   <CurrencyDollarIcon className="w-6 h-6 text-blue-600" />
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm text-gray-600">Total Volume</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.total_volume.toFixed(2)}</p>
+                  <p className="text-sm text-gray-600">Volumen Total</p>
+                  <p className="text-2xl font-bold text-gray-900">{parseFloat(String(stats.total_volume || '0')).toFixed(2)}</p>
                 </div>
               </div>
             </div>
@@ -153,8 +171,8 @@ export default function DashboardPage() {
                   <ArrowUpIcon className="w-6 h-6 text-purple-600" />
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm text-gray-600">Success Rate</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.success_rate.toFixed(1)}%</p>
+                  <p className="text-sm text-gray-600">Tasa de Éxito</p>
+                  <p className="text-2xl font-bold text-gray-900">{parseFloat(String(stats.success_rate || '0')).toFixed(1)}%</p>
                 </div>
               </div>
             </div>
@@ -166,19 +184,19 @@ export default function DashboardPage() {
           <div className="lg:col-span-2">
             <div className="card">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-gray-900">Your Wallets</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Tus Billeteras</h2>
                 <Link href="/wallet" className="btn-primary text-sm">
                   <EyeIcon className="w-4 h-4 mr-2" />
-                  View All
+                  Ver Todo
                 </Link>
               </div>
 
               {wallets.length === 0 ? (
                 <div className="text-center py-8">
                   <CurrencyDollarIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500 mb-4">No wallets found</p>
+                  <p className="text-gray-500 mb-4">No se encontraron billeteras</p>
                   <Link href="/wallet" className="btn-primary">
-                    Set up your first wallet
+                    Configura tu primera billetera
                   </Link>
                 </div>
               ) : (
@@ -193,7 +211,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="ml-3">
                           <p className="font-medium text-gray-900">{wallet.currency}</p>
-                          <p className="text-sm text-gray-500">Available</p>
+                          <p className="text-sm text-gray-500">Disponible</p>
                         </div>
                       </div>
                       <div className="text-right">
@@ -202,7 +220,7 @@ export default function DashboardPage() {
                         </p>
                         {wallet.locked_balance > 0 && (
                           <p className="text-sm text-orange-600">
-                            {formatCurrency(wallet.locked_balance, wallet.currency)} locked
+                            {formatCurrency(wallet.locked_balance, wallet.currency)} bloqueado
                           </p>
                         )}
                       </div>
@@ -217,7 +235,7 @@ export default function DashboardPage() {
           <div className="space-y-6">
             {/* Market Rates */}
             <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Market Rates</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Tasas de Mercado</h3>
               <div className="space-y-3">
                 {Object.entries(rates).slice(0, 3).map(([pair, rate]) => {
                   const isUp = Math.random() > 0.5
@@ -228,9 +246,13 @@ export default function DashboardPage() {
                       </span>
                       <div className="flex items-center">
                         <span className="text-sm text-gray-600 mr-2">
-                          {typeof rate.best_sell === 'number' 
-                            ? rate.best_sell.toFixed(4) 
-                            : rate}
+                          {(() => {
+                            if (typeof rate === 'object' && rate !== null) {
+                              const sellPrice = rate.best_sell || rate.best_buy || 0;
+                              return parseFloat(String(sellPrice)).toFixed(4);
+                            }
+                            return parseFloat(String(rate || 0)).toFixed(4);
+                          })()}
                         </span>
                         {isUp ? (
                           <ArrowUpIcon className="w-4 h-4 text-success-500" />
@@ -246,17 +268,17 @@ export default function DashboardPage() {
 
             {/* Quick Actions */}
             <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Acciones Rápidas</h3>
               <div className="space-y-3">
                 <Link href="/trade/create" className="btn-primary w-full">
                   <PlusIcon className="w-4 h-4 mr-2" />
-                  Create New Order
+                  Crear Nueva Orden
                 </Link>
                 <Link href="/trade" className="btn-secondary w-full">
-                  Browse Orders
+                  Explorar Órdenes
                 </Link>
                 <Link href="/wallet/deposit" className="btn-secondary w-full">
-                  Deposit Funds
+                  Depositar Fondos
                 </Link>
               </div>
             </div>
@@ -266,18 +288,18 @@ export default function DashboardPage() {
         {/* Recent Orders */}
         <div className="card">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Orders</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Órdenes Recientes</h2>
             <Link href="/trade/orders" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
-              View All Orders
+              Ver Todas las Órdenes
             </Link>
           </div>
 
           {recentOrders.length === 0 ? (
             <div className="text-center py-8">
               <ChartBarIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 mb-4">No orders yet</p>
+              <p className="text-gray-500 mb-4">Aún no hay órdenes</p>
               <Link href="/trade/create" className="btn-primary">
-                Create your first order
+                Crea tu primera orden
               </Link>
             </div>
           ) : (
@@ -285,12 +307,12 @@ export default function DashboardPage() {
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Type</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Pair</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Amount</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Rate</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Status</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Date</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Tipo</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Par</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Cantidad</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Tasa</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Estado</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Fecha</th>
                   </tr>
                 </thead>
                 <tbody>

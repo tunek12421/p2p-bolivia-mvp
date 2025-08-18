@@ -23,7 +23,7 @@ export default function LoginPage() {
     e.preventDefault()
     
     if (!email || !password) {
-      toast.error('Please fill in all fields')
+      toast.error('Por favor completa todos los campos')
       return
     }
 
@@ -55,10 +55,10 @@ export default function LoginPage() {
             <span className="ml-2 text-2xl font-bold">P2P Bolivia</span>
           </Link>
           <h2 className="mt-6 text-3xl font-bold text-gray-900">
-            Welcome back
+            Bienvenido de vuelta
           </h2>
           <p className="mt-2 text-gray-600">
-            Sign in to your account to continue trading
+            Inicia sesión en tu cuenta para continuar intercambiando
           </p>
         </div>
 
@@ -67,7 +67,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
+                Dirección de Email
               </label>
               <input
                 id="email"
@@ -76,7 +76,7 @@ export default function LoginPage() {
                 autoComplete="email"
                 required
                 className="input"
-                placeholder="Enter your email"
+                placeholder="Ingresa tu email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
@@ -85,7 +85,7 @@ export default function LoginPage() {
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
+                Contraseña
               </label>
               <div className="relative">
                 <input
@@ -95,7 +95,7 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   required
                   className="input pr-10"
-                  placeholder="Enter your password"
+                  placeholder="Ingresa tu contraseña"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={isLoading}
@@ -123,13 +123,13 @@ export default function LoginPage() {
                   className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
-                  Remember me
+                  Recuerdame
                 </label>
               </div>
 
               <div className="text-sm">
                 <Link href="/auth/forgot-password" className="text-primary-600 hover:text-primary-500">
-                  Forgot your password?
+                  ¿Olvidaste tu contraseña?
                 </Link>
               </div>
             </div>
@@ -142,10 +142,10 @@ export default function LoginPage() {
               {isLoading ? (
                 <div className="flex items-center">
                   <div className="loading-spinner w-4 h-4 mr-2"></div>
-                  Signing in...
+                  Iniciando sesión...
                 </div>
               ) : (
-                'Sign In'
+                'Iniciar Sesión'
               )}
             </button>
           </form>
@@ -156,7 +156,7 @@ export default function LoginPage() {
                 <div className="w-full border-t border-gray-300" />
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">New to P2P Bolivia?</span>
+                <span className="px-2 bg-white text-gray-500">¿Nuevo en P2P Bolivia?</span>
               </div>
             </div>
 
@@ -165,7 +165,7 @@ export default function LoginPage() {
                 href="/auth/register"
                 className="w-full flex justify-center py-3 px-4 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors"
               >
-                Create an account
+                Crear una cuenta
               </Link>
             </div>
           </div>
@@ -174,7 +174,7 @@ export default function LoginPage() {
         {/* Demo credentials notice */}
         <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="text-sm text-blue-800">
-            <p className="font-medium mb-1">Demo Credentials:</p>
+            <p className="font-medium mb-1">Credenciales de Demo:</p>
             <p>Email: demo@p2pbolivia.com</p>
             <p>Password: demo123</p>
           </div>
@@ -183,9 +183,9 @@ export default function LoginPage() {
         {/* Footer links */}
         <div className="mt-8 text-center">
           <div className="flex justify-center space-x-6 text-sm text-gray-500">
-            <Link href="/terms" className="hover:text-gray-700">Terms</Link>
-            <Link href="/privacy" className="hover:text-gray-700">Privacy</Link>
-            <Link href="/support" className="hover:text-gray-700">Support</Link>
+            <Link href="/terms" className="hover:text-gray-700">Términos</Link>
+            <Link href="/privacy" className="hover:text-gray-700">Privacidad</Link>
+            <Link href="/support" className="hover:text-gray-700">Soporte</Link>
           </div>
         </div>
       </div>

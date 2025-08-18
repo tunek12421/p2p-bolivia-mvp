@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Frontend Registration</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <h1>Frontend Registration Test</h1>
+    <button onclick="testRegistration()">Test Registration</button>
+    <div id="logs" style="margin-top: 20px; font-family: monospace; white-space: pre-wrap;"></div>
+
+    <script>
+        const logDiv = document.getElementById('logs');
+        
+        function log(message) {
+            console.log(message);
+            logDiv.textContent += new Date().toISOString() + ': ' + message + '\n';
+        }
+
+        async function testRegistration() {
+            log('🚀 Starting registration test');
+            
+            const API_URL = 'http://localhost:8080';
+            log('🌐 API_URL: ' + API_URL);
+            
+            const api = axios.create({
+                baseURL: API_URL,
+                timeout: 10000,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            // Add request interceptor
+            api.interceptors.request.use(
+                (config) => {
+                    log('🔄 API REQUEST: ' + config.method.toUpperCase() + ' ' + config.baseURL + config.url);
+                    log('🔄 Headers: ' + JSON.stringify(config.headers));
+                    return config;
+                },
+                (error) => {
+                    log('❌ API REQUEST ERROR: ' + error.message);
+                    return Promise.reject(error);
+                }
+            );
+
+            // Add response interceptor
+            api.interceptors.response.use(
+                (response) => {
+                    log('✅ API RESPONSE: ' + response.status + ' ' + response.statusText);
+                    log('✅ Response data keys: ' + Object.keys(response.data).join(', '));
+                    return response;
+                },
+                (error) => {
+                    log('❌ API RESPONSE ERROR: ' + error.response?.status + ' ' + error.response?.statusText);
+                    log('❌ Error URL: ' + error.config?.url);
+                    log('❌ Error data: ' + JSON.stringify(error.response?.data));
+                    return Promise.reject(error);
+                }
+            );
+
+            try {
+                const registrationData = {
+                    email: 'frontend-browser-test@example.com',
+                    password: 'password123',
+                    firstName: 'Frontend',
+                    lastName: 'Test'
+                };
+
+                log('📤 Calling api.post("/api/v1/register", data)');
+                const response = await api.post('/api/v1/register', registrationData);
+                
+                log('✅ Registration successful!');
+                log('📦 User ID: ' + response.data.user_id);
+                log('📦 Token length: ' + response.data.access_token.length);
+                
+            } catch (error) {
+                log('❌ Registration failed: ' + error.message);
+                if (error.response) {
+                    log('❌ Status: ' + error.response.status);
+                    log('❌ Data: ' + JSON.stringify(error.response.data));
+                }
+            }
+        }
+    </script>
+</body>
+</html>

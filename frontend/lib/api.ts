@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -13,22 +13,51 @@ export const api = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
+    console.log('🔄 API REQUEST:', {
+      method: config.method?.toUpperCase(),
+      url: config.url,
+      baseURL: config.baseURL,
+      fullURL: `${config.baseURL}${config.url}`,
+      headers: config.headers
+    })
+    
     const token = localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+      console.log('🔐 API REQUEST: Added auth token to request')
     }
     return config
   },
   (error) => {
+    console.error('❌ API REQUEST ERROR:', error)
     return Promise.reject(error)
   }
 )
 
 // Response interceptor to handle common errors
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log('✅ API RESPONSE:', {
+      status: response.status,
+      statusText: response.statusText,
+      url: response.config.url,
+      method: response.config.method?.toUpperCase(),
+      dataKeys: response.data ? Object.keys(response.data) : 'no data'
+    })
+    return response
+  },
   (error) => {
+    console.error('❌ API RESPONSE ERROR:', {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      url: error.config?.url,
+      method: error.config?.method?.toUpperCase(),
+      data: error.response?.data,
+      message: error.message
+    })
+    
     if (error.response?.status === 401) {
+      console.log('🔓 API: Token expired, clearing auth data')
       // Token expired or invalid
       localStorage.removeItem('token')
       localStorage.removeItem('user')
@@ -47,7 +76,7 @@ api.interceptors.response.use(
 // Auth API
 export const authAPI = {
   login: (email: string, password: string) =>
-    api.post('/auth/login', { email, password }),
+    api.post('/api/v1/login', { email, password }),
   
   register: (data: {
     email: string
@@ -55,11 +84,11 @@ export const authAPI = {
     firstName: string
     lastName: string
     phone?: string
-  }) => api.post('/auth/register', data),
+  }) => api.post('/api/v1/register', data),
   
-  refresh: () => api.post('/auth/refresh'),
+  refresh: () => api.post('/api/v1/refresh'),
   
-  logout: () => api.post('/auth/logout'),
+  logout: () => api.post('/api/v1/logout'),
 }
 
 // P2P API
@@ -71,7 +100,7 @@ export const p2pAPI = {
     status?: string
     limit?: number
     offset?: number
-  }) => api.get('/p2p/orders', { params }),
+  }) => api.get('/api/v1/orders', { params }),
   
   createOrder: (data: {
     type: 'BUY' | 'SELL'
@@ -82,37 +111,37 @@ export const p2pAPI = {
     min_amount?: number
     max_amount?: number
     payment_methods: string[]
-  }) => api.post('/p2p/orders', data),
+  }) => api.post('/api/v1/orders', data),
   
-  getUserOrders: () => api.get('/p2p/user/orders'),
+  getUserOrders: () => api.get('/api/v1/user/orders'),
   
-  cancelOrder: (orderId: string) => api.delete(`/p2p/orders/${orderId}`),
+  cancelOrder: (orderId: string) => api.delete(`/api/v1/orders/${orderId}`),
   
   getOrderBook: (currency_from: string, currency_to: string) =>
-    api.get('/p2p/orderbook', { params: { currency_from, currency_to } }),
+    api.get('/api/v1/orderbook', { params: { currency_from, currency_to } }),
   
-  getRates: () => api.get('/p2p/rates'),
+  getRates: () => api.get('/api/v1/rates'),
   
   getMatches: (params?: { limit?: number; offset?: number }) =>
-    api.get('/p2p/user/matches', { params }),
+    api.get('/api/v1/user/matches', { params }),
   
   getOrderHistory: (params?: {
     status?: string
     limit?: number
     offset?: number
-  }) => api.get('/p2p/user/history', { params }),
+  }) => api.get('/api/v1/user/history', { params }),
   
-  getTradingStats: () => api.get('/p2p/user/stats'),
+  getTradingStats: () => api.get('/api/v1/user/stats'),
   
   getMarketDepth: (currency_from: string, currency_to: string) =>
-    api.get('/p2p/market/depth', { params: { currency_from, currency_to } }),
+    api.get('/api/v1/market/depth', { params: { currency_from, currency_to } }),
 }
 
 // Wallet API
 export const walletAPI = {
-  getWallets: () => api.get('/wallet/wallets'),
+  getWallets: () => api.get('/api/v1/wallets'),
   
-  getWallet: (currency: string) => api.get(`/wallet/wallets/${currency}`),
+  getWallet: (currency: string) => api.get(`/api/v1/wallets/${currency}`),
   
   getTransactions: (params?: {
     currency?: string
@@ -120,31 +149,31 @@ export const walletAPI = {
     status?: string
     limit?: number
     offset?: number
-  }) => api.get('/wallet/transactions', { params }),
+  }) => api.get('/api/v1/transactions', { params }),
   
-  getTransaction: (txId: string) => api.get(`/wallet/transactions/${txId}`),
+  getTransaction: (txId: string) => api.get(`/api/v1/transactions/${txId}`),
   
   deposit: (data: {
     currency: string
     amount: number
     method: 'BANK' | 'PAYPAL' | 'STRIPE' | 'QR'
-  }) => api.post('/wallet/deposit', data),
+  }) => api.post('/api/v1/deposit', data),
   
   withdraw: (data: {
     currency: string
     amount: number
     method: 'BANK' | 'PAYPAL' | 'STRIPE'
     destination: any
-  }) => api.post('/wallet/withdraw', data),
+  }) => api.post('/api/v1/withdraw', data),
   
   transfer: (data: {
     from_currency: string
     to_currency: string
     amount: number
     recipient_id: string
-  }) => api.post('/wallet/transfer', data),
+  }) => api.post('/api/v1/transfer', data),
   
-  getRates: () => api.get('/wallet/rates'),
+  getRates: () => api.get('/api/v1/rates'),
 }
 
 // Types for API responses

@@ -47,9 +47,9 @@ func (s *Server) handleGetOrders(c *gin.Context) {
 	argIndex := 1
 	
 	baseQuery := `
-		SELECT id, user_id, type, currency_from, currency_to, amount, remaining_amount,
+		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
 			rate, min_amount, max_amount, payment_methods, status, created_at
-		FROM orders
+		FROM p2p_orders
 	`
 	
 	if currencyFrom != "" {
@@ -438,9 +438,9 @@ func (s *Server) handleGetOrderHistory(c *gin.Context) {
 	offsetInt, _ := strconv.Atoi(offset)
 	
 	query := `
-		SELECT id, user_id, type, currency_from, currency_to, amount, remaining_amount,
+		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
 			rate, min_amount, max_amount, payment_methods, status, created_at
-		FROM orders
+		FROM p2p_orders
 		WHERE user_id = $1
 	`
 	
@@ -495,14 +495,14 @@ func (s *Server) handleGetTradingStats(c *gin.Context) {
 	var totalOrders, activeOrders, filledOrders, cancelledOrders int
 	var totalVolume decimal.Decimal
 	
-	s.db.QueryRow("SELECT COUNT(*) FROM orders WHERE user_id = $1", userID).Scan(&totalOrders)
-	s.db.QueryRow("SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status = 'ACTIVE'", userID).Scan(&activeOrders)
-	s.db.QueryRow("SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status = 'FILLED'", userID).Scan(&filledOrders)
-	s.db.QueryRow("SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status = 'CANCELLED'", userID).Scan(&cancelledOrders)
+	s.db.QueryRow("SELECT COUNT(*) FROM p2p_orders WHERE user_id = $1", userID).Scan(&totalOrders)
+	s.db.QueryRow("SELECT COUNT(*) FROM p2p_orders WHERE user_id = $1 AND status = 'ACTIVE'", userID).Scan(&activeOrders)
+	s.db.QueryRow("SELECT COUNT(*) FROM p2p_orders WHERE user_id = $1 AND status = 'FILLED'", userID).Scan(&filledOrders)
+	s.db.QueryRow("SELECT COUNT(*) FROM p2p_orders WHERE user_id = $1 AND status = 'CANCELLED'", userID).Scan(&cancelledOrders)
 	
 	s.db.QueryRow(`
 		SELECT COALESCE(SUM(amount - remaining_amount), 0) 
-		FROM orders 
+		FROM p2p_orders 
 		WHERE user_id = $1 AND status IN ('FILLED', 'PARTIAL')
 	`, userID).Scan(&totalVolume)
 	

@@ -17,7 +17,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Set environment variables for build
-ENV NEXT_PUBLIC_API_URL=http://gateway:3000
+ENV NEXT_PUBLIC_API_URL=http://localhost:8080
 ENV NODE_ENV=production
 
 # Build the application

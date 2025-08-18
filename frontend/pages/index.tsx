@@ -77,12 +77,30 @@ export default function HomePage() {
   }
 
   const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
+    // Map crypto currencies to valid ISO codes for formatting
+    const currencyMapping: { [key: string]: string } = {
+      'BOB': 'USD', // Format as USD but replace symbol
+      'USDT': 'USD', // Format as USD but replace symbol
+      'USD': 'USD'
+    }
+    
+    const formatCurrencyCode = currencyMapping[currency] || 'USD'
+    
+    let formatted = new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: currency === 'BOB' ? 'USD' : currency,
+      currency: formatCurrencyCode,
       minimumFractionDigits: currency === 'BOB' ? 2 : 4,
       maximumFractionDigits: currency === 'BOB' ? 2 : 4,
-    }).format(amount).replace('$', currency === 'BOB' ? 'Bs. ' : '$')
+    }).format(amount)
+    
+    // Replace the dollar symbol with appropriate currency symbol
+    if (currency === 'BOB') {
+      formatted = formatted.replace('$', 'Bs. ')
+    } else if (currency === 'USDT') {
+      formatted = formatted.replace('$', 'USDT ')
+    }
+    
+    return formatted
   }
 
   const formatNumber = (num: number) => {
@@ -117,10 +135,10 @@ export default function HomePage() {
             </div>
             <div className="flex items-center space-x-4">
               <Link href="/auth/login" className="btn-secondary">
-                Sign In
+                Iniciar Sesión
               </Link>
               <Link href="/auth/register" className="btn-primary">
-                Get Started
+                Comenzar
               </Link>
             </div>
           </div>
@@ -132,19 +150,19 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6 animate-fade-in">
-              Trade Bolivianos & USD{' '}
-              <span className="text-primary-600">Securely</span>
+              Intercambia Bolivianos & USD{' '}
+              <span className="text-primary-600">de Forma Segura</span>
             </h1>
             <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto animate-fade-in animation-delay-200">
-              The most trusted peer-to-peer exchange platform in Bolivia. 
-              Trade BOB, USD, and USDT with zero fees and instant settlements.
+              La plataforma de intercambio peer-to-peer más confiable en Bolivia. 
+              Intercambia BOB, USD y USDT sin comisiones y con liquidaciones instantáneas.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in animation-delay-400">
               <Link href="/auth/register" className="btn-primary text-lg px-8 py-3">
-                Start Trading Now
+                Comenzar a Intercambiar
               </Link>
               <Link href="#features" className="btn-secondary text-lg px-8 py-3">
-                Learn More
+                Saber Más
               </Link>
             </div>
           </div>
@@ -160,8 +178,8 @@ export default function HomePage() {
       <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Live Exchange Rates</h2>
-            <p className="text-gray-600">Real-time market prices from active trades</p>
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Tasas de Cambio en Vivo</h2>
+            <p className="text-gray-600">Precios de mercado en tiempo real de intercambios activos</p>
           </div>
           
           {loadingRates ? (
@@ -198,7 +216,7 @@ export default function HomePage() {
                     <div className="space-y-2">
                       {rate.best_buy && (
                         <div className="flex justify-between">
-                          <span className="text-sm text-gray-500">Buy</span>
+                          <span className="text-sm text-gray-500">Compra</span>
                           <span className="font-semibold text-success-600">
                             {formatCurrency(rate.best_buy, to)}
                           </span>
@@ -206,7 +224,7 @@ export default function HomePage() {
                       )}
                       {rate.best_sell && (
                         <div className="flex justify-between">
-                          <span className="text-sm text-gray-500">Sell</span>
+                          <span className="text-sm text-gray-500">Venta</span>
                           <span className="font-semibold text-danger-600">
                             {formatCurrency(rate.best_sell, to)}
                           </span>
@@ -214,9 +232,9 @@ export default function HomePage() {
                       )}
                       {rate.spread_percent && (
                         <div className="flex justify-between">
-                          <span className="text-sm text-gray-500">Spread</span>
+                          <span className="text-sm text-gray-500">Diferencial</span>
                           <span className="text-sm text-gray-700">
-                            {rate.spread_percent.toFixed(2)}%
+                            {parseFloat(String(rate.spread_percent || 0)).toFixed(2)}%
                           </span>
                         </div>
                       )}
@@ -233,8 +251,8 @@ export default function HomePage() {
       <section className="py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">Trusted by Thousands</h2>
-            <p className="text-gray-600">Join the growing community of P2P traders in Bolivia</p>
+            <h2 className="text-3xl font-bold text-gray-900 mb-4">Confiado por Miles</h2>
+            <p className="text-gray-600">Únete a la creciente comunidad de traders P2P en Bolivia</p>
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
@@ -245,7 +263,7 @@ export default function HomePage() {
               <div className="text-3xl font-bold text-gray-900 mb-2">
                 {formatNumber(stats.totalOrders)}
               </div>
-              <div className="text-gray-600">Total Orders</div>
+              <div className="text-gray-600">Órdenes Totales</div>
             </div>
             
             <div className="text-center">
@@ -255,7 +273,7 @@ export default function HomePage() {
               <div className="text-3xl font-bold text-gray-900 mb-2">
                 ${formatNumber(stats.totalVolume)}
               </div>
-              <div className="text-gray-600">Trading Volume</div>
+              <div className="text-gray-600">Volumen de Trading</div>
             </div>
             
             <div className="text-center">
@@ -265,7 +283,7 @@ export default function HomePage() {
               <div className="text-3xl font-bold text-gray-900 mb-2">
                 {formatNumber(stats.activeUsers)}
               </div>
-              <div className="text-gray-600">Active Users</div>
+              <div className="text-gray-600">Usuarios Activos</div>
             </div>
             
             <div className="text-center">
@@ -275,7 +293,7 @@ export default function HomePage() {
               <div className="text-3xl font-bold text-gray-900 mb-2">
                 {formatNumber(stats.dailyTrades)}
               </div>
-              <div className="text-gray-600">Daily Trades</div>
+              <div className="text-gray-600">Intercambios Diarios</div>
             </div>
           </div>
         </div>
@@ -286,10 +304,10 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Why Choose P2P Bolivia?
+              ¿Por qué Elegir P2P Bolivia?
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Experience the future of currency exchange with our secure, fast, and user-friendly platform
+              Experimenta el futuro del intercambio de monedas con nuestra plataforma segura, rápida y fácil de usar
             </p>
           </div>
           
@@ -298,9 +316,9 @@ export default function HomePage() {
               <div className="w-20 h-20 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:bg-primary-200 transition-colors">
                 <ShieldCheckIcon className="w-10 h-10 text-primary-600" />
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Bank-Level Security</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Seguridad Bancaria</h3>
               <p className="text-gray-600">
-                Your funds are protected with enterprise-grade encryption and multi-signature wallets
+                Tus fondos están protegidos con encriptación de nivel empresarial y billeteras multifirma
               </p>
             </div>
             
@@ -308,9 +326,9 @@ export default function HomePage() {
               <div className="w-20 h-20 bg-success-100 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:bg-success-200 transition-colors">
                 <SparklesIcon className="w-10 h-10 text-success-600" />
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Zero Trading Fees</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Sin Comisiones de Trading</h3>
               <p className="text-gray-600">
-                Trade without worrying about fees. Keep 100% of your profits with our zero-fee structure
+                Intercambia sin preocuparte por las comisiones. Mantén el 100% de tus ganancias con nuestra estructura sin comisiones
               </p>
             </div>
             
@@ -318,9 +336,9 @@ export default function HomePage() {
               <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:bg-purple-200 transition-colors">
                 <CurrencyDollarIcon className="w-10 h-10 text-purple-600" />
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Multiple Payment Methods</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Múltiples Métodos de Pago</h3>
               <p className="text-gray-600">
-                Support for bank transfers, PayPal, Stripe, and QR payments for maximum convenience
+                Soporte para transferencias bancarias, PayPal, Stripe y pagos QR para máxima conveniencia
               </p>
             </div>
           </div>
@@ -331,13 +349,13 @@ export default function HomePage() {
       <section className="py-20 bg-gradient-to-r from-primary-600 to-primary-800">
         <div className="max-w-4xl mx-auto text-center px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
-            Ready to Start Trading?
+            ¿Listo para Comenzar a Intercambiar?
           </h2>
           <p className="text-xl text-primary-100 mb-8">
-            Join thousands of traders who trust P2P Bolivia for their currency exchange needs
+            Únete a miles de traders que confían en P2P Bolivia para sus necesidades de intercambio de monedas
           </p>
           <Link href="/auth/register" className="btn bg-white text-primary-600 hover:bg-gray-50 text-lg px-8 py-3 font-semibold">
-            Create Your Account
+            Crear Tu Cuenta
           </Link>
         </div>
       </section>
@@ -352,32 +370,32 @@ export default function HomePage() {
                 <span className="ml-2 text-xl font-bold">P2P Bolivia</span>
               </div>
               <p className="text-gray-300 mb-4">
-                The most trusted peer-to-peer exchange platform in Bolivia. 
-                Trade BOB, USD, and USDT securely and efficiently.
+                La plataforma de intercambio peer-to-peer más confiable en Bolivia. 
+                Intercambia BOB, USD y USDT de forma segura y eficiente.
               </p>
             </div>
             
             <div>
-              <h3 className="text-lg font-semibold mb-4">Platform</h3>
+              <h3 className="text-lg font-semibold mb-4">Plataforma</h3>
               <ul className="space-y-2 text-gray-300">
-                <li><Link href="/auth/login" className="hover:text-white transition-colors">Sign In</Link></li>
-                <li><Link href="/auth/register" className="hover:text-white transition-colors">Register</Link></li>
-                <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
+                <li><Link href="/auth/login" className="hover:text-white transition-colors">Iniciar Sesión</Link></li>
+                <li><Link href="/auth/register" className="hover:text-white transition-colors">Registrarse</Link></li>
+                <li><a href="#features" className="hover:text-white transition-colors">Características</a></li>
               </ul>
             </div>
             
             <div>
-              <h3 className="text-lg font-semibold mb-4">Support</h3>
+              <h3 className="text-lg font-semibold mb-4">Soporte</h3>
               <ul className="space-y-2 text-gray-300">
-                <li><a href="mailto:support@p2pbolivia.com" className="hover:text-white transition-colors">Contact Us</a></li>
-                <li><a href="/help" className="hover:text-white transition-colors">Help Center</a></li>
-                <li><a href="/terms" className="hover:text-white transition-colors">Terms of Service</a></li>
+                <li><a href="mailto:support@p2pbolivia.com" className="hover:text-white transition-colors">Contáctanos</a></li>
+                <li><a href="/help" className="hover:text-white transition-colors">Centro de Ayuda</a></li>
+                <li><a href="/terms" className="hover:text-white transition-colors">Términos de Servicio</a></li>
               </ul>
             </div>
           </div>
           
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400">
-            <p>&copy; 2024 P2P Bolivia. All rights reserved.</p>
+            <p>&copy; 2024 P2P Bolivia. Todos los derechos reservados.</p>
           </div>
         </div>
       </footer>

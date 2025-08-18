@@ -60,9 +60,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setIsLoading(true)
-      const response = await api.post('/auth/login', { email, password })
+      const response = await api.post('/api/v1/login', { username: email, password })
       
-      const { user: userData, token: userToken, expires_at } = response.data
+      const { user_id: UserID, access_token: userToken, expires_in: ExpiresIn } = response.data
+      
+      // Get user profile separately
+      const userResponse = await api.get('/api/v1/me', {
+        headers: { Authorization: `Bearer ${userToken}` }
+      })
+      const userData = userResponse.data
       
       setUser(userData)
       setToken(userToken)
@@ -70,12 +76,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Store in localStorage
       localStorage.setItem('token', userToken)
       localStorage.setItem('user', JSON.stringify(userData))
-      localStorage.setItem('tokenExpiry', expires_at)
+      const expiresAt = new Date(Date.now() + ExpiresIn * 1000).toISOString()
+      localStorage.setItem('tokenExpiry', expiresAt)
       
       // Set default header for future requests
       api.defaults.headers.common['Authorization'] = `Bearer ${userToken}`
       
-      toast.success(`Welcome back, ${userData.firstName}!`)
+      toast.success(`¡Bienvenido de vuelta, ${userData.firstName}!`)
       return true
     } catch (error: any) {
       const message = error.response?.data?.error || 'Login failed'
@@ -89,9 +96,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (data: RegisterData): Promise<boolean> => {
     try {
       setIsLoading(true)
-      const response = await api.post('/auth/register', data)
+      console.log('🚀 REGISTER: Starting registration process')
+      console.log('📋 REGISTER: Registration data:', {
+        email: data.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phone: data.phone,
+        passwordLength: data.password?.length
+      })
       
-      const { user: userData, token: userToken, expires_at } = response.data
+      console.log('🌐 REGISTER: API baseURL:', api.defaults.baseURL)
+      console.log('📡 REGISTER: Making request to /api/v1/register')
+      
+      const response = await api.post('/api/v1/register', data)
+      
+      console.log('✅ REGISTER: Registration request successful')
+      console.log('📦 REGISTER: Response status:', response.status)
+      console.log('📦 REGISTER: Response data:', response.data)
+      
+      const { user_id: UserID, access_token: userToken, expires_in: ExpiresIn } = response.data
+      
+      console.log('🔍 REGISTER: Extracted from response:', {
+        UserID,
+        tokenLength: userToken?.length,
+        ExpiresIn
+      })
+      
+      // Get user profile separately
+      console.log('👤 REGISTER: Fetching user profile with token')
+      const userResponse = await api.get('/api/v1/me', {
+        headers: { Authorization: `Bearer ${userToken}` }
+      })
+      
+      console.log('✅ REGISTER: User profile fetched successfully')
+      console.log('👤 REGISTER: User data:', userResponse.data)
+      
+      const userData = userResponse.data
       
       setUser(userData)
       setToken(userToken)
@@ -99,14 +139,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Store in localStorage
       localStorage.setItem('token', userToken)
       localStorage.setItem('user', JSON.stringify(userData))
-      localStorage.setItem('tokenExpiry', expires_at)
+      const expiresAt = new Date(Date.now() + ExpiresIn * 1000).toISOString()
+      localStorage.setItem('tokenExpiry', expiresAt)
+      
+      console.log('💾 REGISTER: Stored in localStorage:', {
+        tokenLength: userToken.length,
+        userDataKeys: Object.keys(userData),
+        expiresAt
+      })
       
       // Set default header for future requests
       api.defaults.headers.common['Authorization'] = `Bearer ${userToken}`
       
-      toast.success(`Welcome to P2P Bolivia, ${userData.firstName}!`)
+      toast.success(`¡Bienvenido a P2P Bolivia, ${userData.firstName}!`)
+      console.log('🎉 REGISTER: Registration process completed successfully')
       return true
     } catch (error: any) {
+      console.error('❌ REGISTER: Registration failed')
+      console.error('❌ REGISTER: Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method,
+        baseURL: error.config?.baseURL
+      })
+      
       const message = error.response?.data?.error || 'Registration failed'
       toast.error(message)
       return false
@@ -127,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Clear default header
     delete api.defaults.headers.common['Authorization']
     
-    toast.success('Logged out successfully')
+    toast.success('Sesión cerrada exitosamente')
   }
 
   const refreshToken = async (): Promise<boolean> => {
@@ -135,15 +194,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedToken = localStorage.getItem('token')
       if (!storedToken) return false
 
-      const response = await api.post('/auth/refresh', {}, {
+      const response = await api.post('/api/v1/refresh', {}, {
         headers: { Authorization: `Bearer ${storedToken}` }
       })
       
-      const { token: newToken, expires_at } = response.data
+      const { access_token: newToken, expires_in } = response.data
       
       setToken(newToken)
       localStorage.setItem('token', newToken)
-      localStorage.setItem('tokenExpiry', expires_at)
+      const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString()
+      localStorage.setItem('tokenExpiry', expiresAt)
       
       api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`
       
