@@ -98,11 +98,12 @@ services:
       - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID}
       - PAYPAL_SECRET=${PAYPAL_SECRET}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
-      - BANK_LISTENER_URL=http://bank-listener:3004
+      - BANK_LISTENER_URL=http://python-listener:8000
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
     depends_on:
       - postgres
       - redis
+      - python-listener
     networks:
       - p2p-network
     restart: unless-stopped
@@ -121,7 +122,24 @@ services:
       - p2p-network
     restart: unless-stopped
 
-  # Bank Listener Service (Placeholder)
+  # Python Bank Listener Service
+  python-listener:
+    build: 
+      context: ./python-listener
+      dockerfile: Dockerfile
+    container_name: p2p-python-listener
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+    volumes:
+      - ./python-listener/notifications.json:/app/notifications.json
+    networks:
+      - p2p-network
+    restart: unless-stopped
+
+  # Bank Listener Service (Go Service)
   bank-listener:
     build: 
       context: ./services/bank-listener
@@ -137,8 +155,10 @@ services:
       - DB_USER=p2padmin
       - DB_PASSWORD=p2psecure123
       - DB_NAME=p2p_bolivia
+      - PYTHON_LISTENER_URL=http://python-listener:8000
     depends_on:
       - postgres
+      - python-listener
     networks:
       - p2p-network
     restart: unless-stopped

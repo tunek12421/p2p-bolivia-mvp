@@ -111,17 +111,17 @@ func (bi *BankIntegration) fetchBankNotifications() ([]BankNotification, error) 
 	
 	var response struct {
 		Notifications []struct {
-			ID            string `json:"id"`
-			TransactionID string `json:"transaction_id"`
-			Amount        string `json:"amount"`  // Comes as string from bank-listener
-			Currency      string `json:"currency"`
-			SenderName    string `json:"sender_name"`
-			SenderAccount string `json:"sender_account"`
-			BankName      string `json:"bank_name"`
-			Reference     string `json:"reference"`
-			Timestamp     string `json:"timestamp"`
-			Status        string `json:"status"`
-			Processed     bool   `json:"processed"`
+			ID            string  `json:"id"`
+			TransactionID string  `json:"transaction_id"`
+			Amount        float64 `json:"amount"`  // Comes as number from python-listener
+			Currency      string  `json:"currency"`
+			SenderName    string  `json:"sender_name"`
+			SenderAccount string  `json:"sender_account"`
+			BankName      string  `json:"bank_name"`
+			Reference     string  `json:"reference"`
+			Timestamp     string  `json:"timestamp"`
+			Status        string  `json:"status"`
+			Processed     bool    `json:"processed"`
 		} `json:"notifications"`
 		Status string `json:"status"`
 		Count  int    `json:"count"`
@@ -134,12 +134,8 @@ func (bi *BankIntegration) fetchBankNotifications() ([]BankNotification, error) 
 	// Convert to internal format
 	var notifications []BankNotification
 	for _, notif := range response.Notifications {
-		// Parse amount
-		amount, err := decimal.NewFromString(notif.Amount)
-		if err != nil {
-			log.Printf("❌ Invalid amount in notification %s: %s", notif.ID, notif.Amount)
-			continue
-		}
+		// Parse amount from float64
+		amount := decimal.NewFromFloat(notif.Amount)
 		
 		// Parse timestamp
 		timestamp, err := time.Parse(time.RFC3339, notif.Timestamp)
@@ -288,9 +284,9 @@ func (bi *BankIntegration) parseNotificationReference(notification BankNotificat
 	
 	// Regular deposit reference format: "DEPOSIT-{USER_ID}"
 	if strings.HasPrefix(ref, "DEPOSIT-") {
-		parts := strings.Split(ref, "-")
-		if len(parts) >= 2 {
-			return parts[1], "DEPOSIT", "", nil
+		userID := strings.TrimPrefix(ref, "DEPOSIT-")
+		if userID != "" {
+			return userID, "DEPOSIT", "", nil
 		}
 	}
 	
