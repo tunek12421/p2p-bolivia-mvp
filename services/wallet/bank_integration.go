@@ -110,15 +110,61 @@ func (bi *BankIntegration) fetchBankNotifications() ([]BankNotification, error) 
 	}
 	
 	var response struct {
-		Notifications []BankNotification `json:"notifications"`
-		Status        string             `json:"status"`
+		Notifications []struct {
+			ID            string `json:"id"`
+			TransactionID string `json:"transaction_id"`
+			Amount        string `json:"amount"`  // Comes as string from bank-listener
+			Currency      string `json:"currency"`
+			SenderName    string `json:"sender_name"`
+			SenderAccount string `json:"sender_account"`
+			BankName      string `json:"bank_name"`
+			Reference     string `json:"reference"`
+			Timestamp     string `json:"timestamp"`
+			Status        string `json:"status"`
+			Processed     bool   `json:"processed"`
+		} `json:"notifications"`
+		Status string `json:"status"`
+		Count  int    `json:"count"`
 	}
 	
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 	
-	return response.Notifications, nil
+	// Convert to internal format
+	var notifications []BankNotification
+	for _, notif := range response.Notifications {
+		// Parse amount
+		amount, err := decimal.NewFromString(notif.Amount)
+		if err != nil {
+			log.Printf("❌ Invalid amount in notification %s: %s", notif.ID, notif.Amount)
+			continue
+		}
+		
+		// Parse timestamp
+		timestamp, err := time.Parse(time.RFC3339, notif.Timestamp)
+		if err != nil {
+			timestamp = time.Now() // Fallback to current time
+		}
+		
+		bankNotification := BankNotification{
+			ID:                notif.ID,
+			TransactionID:     notif.TransactionID,
+			BankAccount:       "", // We'll use sender account
+			Amount:            amount,
+			Currency:          notif.Currency,
+			SenderName:        notif.SenderName,
+			SenderAccount:     notif.SenderAccount,
+			Reference:         notif.Reference,
+			TransactionType:   "DEPOSIT", // Default for incoming notifications
+			Status:            notif.Status,
+			Timestamp:         timestamp,
+		}
+		
+		notifications = append(notifications, bankNotification)
+	}
+	
+	return notifications, nil
 }
 
 func (bi *BankIntegration) processBankNotification(notification BankNotification) error {
