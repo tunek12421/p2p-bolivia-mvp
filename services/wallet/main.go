@@ -370,21 +370,3 @@ func (s *Server) handleGetPendingDeposits(c *gin.Context) {
 	})
 }
 
-func (s *Server) authMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Extract and validate JWT token
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(401, gin.H{"error": "Authorization header required"})
-			c.Abort()
-			return
-		}
-		
-		// Simple validation for development
-		// In production, verify JWT signature and extract user ID
-		userID := "test-user-id" // Replace with actual JWT parsing
-		c.Set("user_id", userID)
-		
-		c.Next()
-	}
-}
