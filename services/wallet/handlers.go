@@ -550,6 +550,11 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			return
 		}
 		
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization format"})
+			c.Abort()
+			return
+		}
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {

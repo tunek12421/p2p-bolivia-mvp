@@ -18,12 +18,36 @@ CREATE TABLE IF NOT EXISTS bank_notifications (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_bank_notifications_processed ON bank_notifications(processed);
-CREATE INDEX IF NOT EXISTS idx_bank_notifications_timestamp ON bank_notifications(timestamp);
-CREATE INDEX IF NOT EXISTS idx_bank_notifications_amount ON bank_notifications(amount);
-CREATE INDEX IF NOT EXISTS idx_bank_notifications_currency ON bank_notifications(currency);
-CREATE INDEX IF NOT EXISTS idx_bank_notifications_reference ON bank_notifications(reference);
+-- Create indexes for better performance (with column existence checks)
+DO $$
+BEGIN
+    -- Only create indexes if the columns exist
+    IF EXISTS (SELECT 1 FROM information_schema.columns 
+               WHERE table_name = 'bank_notifications' AND column_name = 'processed') THEN
+        CREATE INDEX IF NOT EXISTS idx_bank_notifications_processed ON bank_notifications(processed);
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM information_schema.columns 
+               WHERE table_name = 'bank_notifications' AND column_name = 'timestamp') THEN
+        CREATE INDEX IF NOT EXISTS idx_bank_notifications_timestamp ON bank_notifications(timestamp);
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM information_schema.columns 
+               WHERE table_name = 'bank_notifications' AND column_name = 'amount') THEN
+        CREATE INDEX IF NOT EXISTS idx_bank_notifications_amount ON bank_notifications(amount);
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM information_schema.columns 
+               WHERE table_name = 'bank_notifications' AND column_name = 'currency') THEN
+        CREATE INDEX IF NOT EXISTS idx_bank_notifications_currency ON bank_notifications(currency);
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM information_schema.columns 
+               WHERE table_name = 'bank_notifications' AND column_name = 'reference') THEN
+        CREATE INDEX IF NOT EXISTS idx_bank_notifications_reference ON bank_notifications(reference);
+    END IF;
+END
+$$;
 
 -- Create deposit_accounts table for bank account mapping
 CREATE TABLE IF NOT EXISTS deposit_accounts (
@@ -73,9 +97,7 @@ CREATE TABLE IF NOT EXISTS p2p_matches (
     currency_to VARCHAR(10) NOT NULL,
     status VARCHAR(50) DEFAULT 'PENDING',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    completed_at TIMESTAMP WITH TIME ZONE,
-    FOREIGN KEY (buy_order_id) REFERENCES orders(id),
-    FOREIGN KEY (sell_order_id) REFERENCES orders(id)
+    completed_at TIMESTAMP WITH TIME ZONE
 );
 
 -- Create indexes for p2p_matches
@@ -84,25 +106,30 @@ CREATE INDEX IF NOT EXISTS idx_p2p_matches_created_at ON p2p_matches(created_at)
 CREATE INDEX IF NOT EXISTS idx_p2p_matches_buy_order ON p2p_matches(buy_order_id);
 CREATE INDEX IF NOT EXISTS idx_p2p_matches_sell_order ON p2p_matches(sell_order_id);
 
--- Add wallet_transactions table structure improvement
+-- Add wallet_transactions table structure improvement (only if table exists)
 DO $$
 BEGIN
-    -- Add external_ref column if it doesn't exist
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                   WHERE table_name = 'wallet_transactions' AND column_name = 'external_ref') THEN
-        ALTER TABLE wallet_transactions ADD COLUMN external_ref VARCHAR(255);
-    END IF;
-    
-    -- Add metadata column if it doesn't exist
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                   WHERE table_name = 'wallet_transactions' AND column_name = 'metadata') THEN
-        ALTER TABLE wallet_transactions ADD COLUMN metadata TEXT;
-    END IF;
-    
-    -- Add method column if it doesn't exist
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                   WHERE table_name = 'wallet_transactions' AND column_name = 'method') THEN
-        ALTER TABLE wallet_transactions ADD COLUMN method VARCHAR(50) DEFAULT 'UNKNOWN';
+    -- Only modify wallet_transactions if it exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables 
+               WHERE table_name = 'wallet_transactions' AND table_schema = 'public') THEN
+        
+        -- Add external_ref column if it doesn't exist
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name = 'wallet_transactions' AND column_name = 'external_ref') THEN
+            ALTER TABLE wallet_transactions ADD COLUMN external_ref VARCHAR(255);
+        END IF;
+        
+        -- Add metadata column if it doesn't exist
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name = 'wallet_transactions' AND column_name = 'metadata') THEN
+            ALTER TABLE wallet_transactions ADD COLUMN metadata TEXT;
+        END IF;
+        
+        -- Add method column if it doesn't exist
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name = 'wallet_transactions' AND column_name = 'method') THEN
+            ALTER TABLE wallet_transactions ADD COLUMN method VARCHAR(50) DEFAULT 'UNKNOWN';
+        END IF;
     END IF;
 END
 $$;

@@ -27,13 +27,13 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
             return
         }
 
-        // Extract token
-        tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-        if tokenString == authHeader {
+        // Extract token - fix the logic
+        if !strings.HasPrefix(authHeader, "Bearer ") {
             c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization format"})
             c.Abort()
             return
         }
+        tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
         // Check if token is blacklisted
         ctx := context.Background()
