@@ -113,15 +113,31 @@ func (s *Server) handleSubmitKYC(c *gin.Context) {
 }
 
 func (s *Server) handleUploadDocument(c *gin.Context) {
+	log.Printf("📤 KYC_UPLOAD: Starting document upload handler")
+	
 	userID := c.GetString("user_id")
+	log.Printf("📤 KYC_UPLOAD: User ID: %s", userID)
+	
 	docType := c.PostForm("type")
+	log.Printf("📤 KYC_UPLOAD: Document type: '%s'", docType)
+	
+	// Log all form fields
+	if c.Request.ParseForm() == nil {
+		log.Printf("📤 KYC_UPLOAD: Form fields:")
+		for key, values := range c.Request.PostForm {
+			log.Printf("  %s: %v", key, values)
+		}
+	}
 	
 	// Validate document type
 	validTypes := []string{"CI", "PASSPORT", "SELFIE", "PROOF_ADDRESS"}
+	log.Printf("📤 KYC_UPLOAD: Valid types: %v", validTypes)
 	if !contains(validTypes, docType) {
+		log.Printf("❌ KYC_UPLOAD: Invalid document type '%s'", docType)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid document type"})
 		return
 	}
+	log.Printf("✅ KYC_UPLOAD: Document type validation passed")
 	
 	// Get file from request
 	file, header, err := c.Request.FormFile("document")

@@ -62,6 +62,34 @@ func (g *Gateway) configureServices() {
         walletURL, _ = url.Parse("http://wallet:3003")
     }
     g.services["wallet"] = walletURL
+
+    // KYC service
+    kycURL, _ := url.Parse(os.Getenv("KYC_SERVICE_URL"))
+    if kycURL == nil {
+        kycURL, _ = url.Parse("http://kyc-service:3005")
+    }
+    g.services["kyc"] = kycURL
+
+    // Dispute service
+    disputeURL, _ := url.Parse(os.Getenv("DISPUTE_SERVICE_URL"))
+    if disputeURL == nil {
+        disputeURL, _ = url.Parse("http://dispute-service:3006")
+    }
+    g.services["dispute"] = disputeURL
+
+    // Chat service
+    chatURL, _ := url.Parse(os.Getenv("CHAT_SERVICE_URL"))
+    if chatURL == nil {
+        chatURL, _ = url.Parse("http://chat-service:3007")
+    }
+    g.services["chat"] = chatURL
+
+    // Analytics service
+    analyticsURL, _ := url.Parse(os.Getenv("ANALYTICS_SERVICE_URL"))
+    if analyticsURL == nil {
+        analyticsURL, _ = url.Parse("http://analytics-service:3008")
+    }
+    g.services["analytics"] = analyticsURL
 }
 
 func (g *Gateway) setupRoutes() {
@@ -127,6 +155,49 @@ func (g *Gateway) setupRoutes() {
         api.POST("/webhooks/paypal", g.proxyToService("wallet"))
         api.POST("/webhooks/stripe", g.proxyToService("wallet"))
         api.POST("/webhooks/bank", g.proxyToService("wallet"))
+
+        // KYC routes
+        api.GET("/kyc/status", g.proxyToService("kyc"))
+        api.POST("/kyc/submit", g.proxyToService("kyc"))
+        api.POST("/kyc/upload-document", g.proxyToService("kyc"))
+        api.POST("/kyc/verify-selfie", g.proxyToService("kyc"))
+        api.GET("/kyc/levels", g.proxyToService("kyc"))
+        api.GET("/kyc/requirements/:level", g.proxyToService("kyc"))
+        // Admin KYC routes
+        api.GET("/kyc/pending", g.proxyToService("kyc"))
+        api.POST("/kyc/approve/:id", g.proxyToService("kyc"))
+        api.POST("/kyc/reject/:id", g.proxyToService("kyc"))
+
+        // Dispute routes
+        api.POST("/disputes", g.proxyToService("dispute"))
+        api.GET("/disputes", g.proxyToService("dispute"))
+        api.GET("/disputes/:id", g.proxyToService("dispute"))
+        api.POST("/disputes/:id/evidence", g.proxyToService("dispute"))
+        api.POST("/disputes/:id/messages", g.proxyToService("dispute"))
+        // Admin dispute routes
+        api.GET("/disputes/pending", g.proxyToService("dispute"))
+        api.POST("/disputes/:id/assign", g.proxyToService("dispute"))
+        api.POST("/disputes/:id/resolve", g.proxyToService("dispute"))
+        api.GET("/disputes/stats", g.proxyToService("dispute"))
+
+        // Chat routes
+        api.GET("/ws", g.proxyToService("chat"))
+        api.POST("/rooms", g.proxyToService("chat"))
+        api.GET("/rooms", g.proxyToService("chat"))
+        api.GET("/rooms/:id/messages", g.proxyToService("chat"))
+        api.POST("/rooms/:id/messages", g.proxyToService("chat"))
+        api.POST("/rooms/:id/join", g.proxyToService("chat"))
+
+        // Analytics routes
+        api.GET("/analytics/overview", g.proxyToService("analytics"))
+        api.GET("/analytics/transactions", g.proxyToService("analytics"))
+        api.GET("/analytics/users", g.proxyToService("analytics"))
+        api.GET("/analytics/revenue", g.proxyToService("analytics"))
+        api.GET("/analytics/kyc", g.proxyToService("analytics"))
+        api.GET("/analytics/disputes", g.proxyToService("analytics"))
+        api.GET("/reports/daily", g.proxyToService("analytics"))
+        api.GET("/reports/monthly", g.proxyToService("analytics"))
+        api.GET("/reports/regulatory", g.proxyToService("analytics"))
     }
 }
 

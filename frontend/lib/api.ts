@@ -248,3 +248,109 @@ export interface TradingStats {
   total_volume: number
   success_rate: number
 }
+
+// KYC API
+export const kycAPI = {
+  getStatus: () => api.get('/api/v1/kyc/status'),
+  
+  submitKYC: (data: {
+    kyc_level: number
+    ci_number: string
+    full_name: string
+    date_of_birth: string
+    address: string
+  }) => api.post('/api/v1/kyc/submit', data),
+  
+  uploadDocument: (formData: FormData) => {
+    console.log('🌐 KYC_API: Starting uploadDocument call')
+    console.log('🌐 KYC_API: FormData entries:')
+    for (let [key, value] of formData.entries()) {
+      if (value instanceof File) {
+        console.log(`  ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`)
+      } else {
+        console.log(`  ${key}: ${value}`)
+      }
+    }
+    
+    return api.post('/api/v1/kyc/upload-document', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }).then(response => {
+      console.log('✅ KYC_API: Upload successful, response:', response)
+      return response
+    }).catch(error => {
+      console.error('❌ KYC_API: Upload failed, error:', error)
+      throw error
+    })
+  },
+  
+  verifySelfie: (formData: FormData) =>
+    api.post('/api/v1/kyc/verify-selfie', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }),
+  
+  getLevels: () => api.get('/api/v1/kyc/levels'),
+  
+  getRequirements: (level: number) => api.get(`/api/v1/kyc/requirements/${level}`),
+}
+
+// User Profile API  
+export const userAPI = {
+  getProfile: () => api.get('/api/v1/me'),
+  
+  updateProfile: (data: {
+    firstName?: string
+    lastName?: string
+    phone?: string
+    address?: string
+    city?: string
+    date_of_birth?: string
+  }) => api.put('/api/v1/profile', data),
+}
+
+// KYC Types
+export interface KYCStatus {
+  kyc_level: number
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'UNDER_REVIEW'
+  submitted_at?: string
+  reviewed_at?: string
+  rejection_reason?: string
+  documents: KYCDocument[]
+}
+
+export interface KYCDocument {
+  id: string
+  document_type: 'CI' | 'PASSPORT' | 'SELFIE' | 'PROOF_ADDRESS'
+  file_path: string
+  status: 'UPLOADED' | 'PROCESSING' | 'VERIFIED' | 'FAILED'
+  created_at: string
+}
+
+export interface KYCLevel {
+  level: number
+  name: string
+  description: string
+  trading_limits: {
+    daily_limit: number
+    monthly_limit: number
+    withdrawal_limit: number
+  }
+  requirements: string[]
+}
+
+export interface UserProfile {
+  id: string
+  email: string
+  firstName: string
+  lastName: string
+  phone?: string
+  kyc_level: number
+  kyc_verified_at?: string
+  is_verified: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}

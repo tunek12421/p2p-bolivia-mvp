@@ -25,7 +25,7 @@ type RegisterRequest struct {
 }
 
 type LoginRequest struct {
-    Username string `json:"username" binding:"required"` // Email or Phone
+    Email    string `json:"email" binding:"required,email"` // Changed from username to email for consistency
     Password string `json:"password" binding:"required"`
 }
 
@@ -174,19 +174,19 @@ func (s *Server) handleLogin(c *gin.Context) {
         return
     }
 
-    log.Printf("📧 LOGIN: Attempting login for username: %s", req.Username)
+    log.Printf("📧 LOGIN: Attempting login for email: %s", req.Email)
     log.Printf("🔐 LOGIN: Password provided: %t (length: %d)", req.Password != "", len(req.Password))
 
     // Find user by email or phone
     var user User
     err := s.db.QueryRow(`
-        SELECT id, email, phone, password_hash, is_verified, kyc_level
+        SELECT id, email, COALESCE(phone, '') as phone, password_hash, is_verified, kyc_level
         FROM users
-        WHERE email = $1 OR phone = $1
-    `, req.Username).Scan(&user.ID, &user.Email, &user.Phone, &user.PasswordHash, &user.IsVerified, &user.KYCLevel)
+        WHERE email = $1 OR COALESCE(phone, '') = $1
+    `, req.Email).Scan(&user.ID, &user.Email, &user.Phone, &user.PasswordHash, &user.IsVerified, &user.KYCLevel)
 
     if err != nil {
-        log.Printf("❌ LOGIN: User not found for username '%s': %v", req.Username, err)
+        log.Printf("❌ LOGIN: User not found for email '%s': %v", req.Email, err)
         c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
         return
     }
@@ -331,7 +331,7 @@ func (s *Server) handleGetProfile(c *gin.Context) {
     var firstName, lastName sql.NullString
     
     err := s.db.QueryRow(`
-        SELECT u.id, u.email, u.phone, u.is_verified, u.kyc_level, u.created_at,
+        SELECT u.id, u.email, COALESCE(u.phone, '') as phone, u.is_verified, u.kyc_level, u.created_at,
                p.first_name, p.last_name
         FROM users u
         LEFT JOIN user_profiles p ON u.id = p.user_id

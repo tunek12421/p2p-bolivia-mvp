@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useRequireAuth } from '../lib/auth'
-import { p2pAPI, walletAPI, WalletBalance, Order, TradingStats } from '../lib/api'
+import { p2pAPI, walletAPI, userAPI, WalletBalance, Order, TradingStats, UserProfile } from '../lib/api'
 import { 
   CurrencyDollarIcon,
   ArrowUpIcon,
   ArrowDownIcon,
   ChartBarIcon,
   PlusIcon,
-  EyeIcon
+  EyeIcon,
+  ExclamationTriangleIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline'
 import DashboardLayout from '../components/DashboardLayout'
 import Link from 'next/link'
@@ -15,6 +17,7 @@ import toast from 'react-hot-toast'
 
 export default function DashboardPage() {
   const { user } = useRequireAuth()
+  const [profile, setProfile] = useState<UserProfile | null>(null)
   const [wallets, setWallets] = useState<WalletBalance[]>([])
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [stats, setStats] = useState<TradingStats | null>(null)
@@ -31,12 +34,17 @@ export default function DashboardPage() {
     try {
       setIsLoading(true)
       
-      const [walletsRes, ordersRes, statsRes, ratesRes] = await Promise.allSettled([
+      const [profileRes, walletsRes, ordersRes, statsRes, ratesRes] = await Promise.allSettled([
+        userAPI.getProfile(),
         walletAPI.getWallets(),
         p2pAPI.getUserOrders(),
         p2pAPI.getTradingStats(),
         p2pAPI.getRates()
       ])
+
+      if (profileRes.status === 'fulfilled') {
+        setProfile(profileRes.value.data)
+      }
 
       if (walletsRes.status === 'fulfilled') {
         setWallets(walletsRes.value.data.wallets || [])
@@ -116,6 +124,35 @@ export default function DashboardPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* KYC Alert */}
+        {profile && profile.kyc_level < 3 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div className="flex">
+              <ExclamationTriangleIcon className="h-5 w-5 text-yellow-400 mt-0.5 flex-shrink-0" />
+              <div className="ml-3 flex-1">
+                <h3 className="text-sm font-medium text-yellow-800">
+                  Verificación KYC Incompleta
+                </h3>
+                <p className="mt-1 text-sm text-yellow-700">
+                  Estás en nivel {profile.kyc_level} de 3. Completa tu verificación para acceder a límites más altos.
+                </p>
+                <div className="mt-3 flex items-center justify-between">
+                  <Link 
+                    href="/profile#kyc" 
+                    className="text-yellow-800 underline text-sm font-medium hover:text-yellow-900"
+                  >
+                    Completar verificación →
+                  </Link>
+                  <div className="flex items-center text-xs text-yellow-700">
+                    <ShieldCheckIcon className="w-4 h-4 mr-1" />
+                    Nivel {profile.kyc_level}/3
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Welcome Section */}
         <div className="bg-gradient-to-r from-primary-600 to-primary-800 rounded-lg p-6 text-white">
           <h1 className="text-2xl font-bold mb-2">

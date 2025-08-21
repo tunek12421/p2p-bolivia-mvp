@@ -14,11 +14,19 @@ services:
       - AUTH_SERVICE_URL=http://auth:3001
       - P2P_SERVICE_URL=http://p2p:3002
       - WALLET_SERVICE_URL=http://wallet:3003
+      - KYC_SERVICE_URL=http://kyc-service:3005
+      - DISPUTE_SERVICE_URL=http://dispute-service:3006
+      - CHAT_SERVICE_URL=http://chat-service:3007
+      - ANALYTICS_SERVICE_URL=http://analytics-service:3008
       - REDIS_URL=redis:6379
     depends_on:
       - auth
       - p2p
       - wallet
+      - kyc-service
+      - dispute-service
+      - chat-service
+      - analytics-service
       - redis
     networks:
       - p2p-network
