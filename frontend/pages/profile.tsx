@@ -551,8 +551,41 @@ export default function ProfilePage() {
               </div>
             </div>
 
+            {/* Mensaje de KYC en proceso */}
+            {kycStatus && (kycStatus.status === 'UNDER_REVIEW' || kycStatus.status === 'PENDING') && (
+              <div className="card">
+                <div className="px-6 py-4 text-center">
+                  <div className="flex flex-col items-center">
+                    <ClockIcon className="w-16 h-16 text-yellow-500 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      Verificación KYC en Proceso
+                    </h3>
+                    <p className="text-gray-600 mb-4">
+                      Tu solicitud de verificación KYC está siendo revisada por nuestro equipo. 
+                      Te notificaremos por email cuando esté completa.
+                    </p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 w-full max-w-md">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0">
+                          <CheckCircleIcon className="w-5 h-5 text-blue-500" />
+                        </div>
+                        <div className="ml-3">
+                          <p className="text-sm text-blue-800">
+                            <strong>Estado:</strong> {kycStatus.status === 'UNDER_REVIEW' ? 'En revisión' : 'Pendiente'}
+                          </p>
+                          <p className="text-sm text-blue-600 mt-1">
+                            Tiempo estimado: 24-48 horas
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* KYC Form */}
-            {(profile?.kyc_level || 0) < 3 && (
+            {(profile?.kyc_level || 0) < 3 && (!kycStatus || kycStatus.status === 'REJECTED') && (
               <div className="card">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h3 className="text-lg font-medium text-gray-900">
