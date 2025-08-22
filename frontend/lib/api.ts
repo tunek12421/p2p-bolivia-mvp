@@ -255,10 +255,18 @@ export const kycAPI = {
   
   submitKYC: (data: {
     kyc_level: number
+    first_name: string
+    last_name: string
     ci_number: string
-    full_name: string
+    ci_complement: string
     date_of_birth: string
     address: string
+    city: string
+    phone: string
+    occupation: string
+    income_source: string
+    expected_volume: number
+    pep_status: boolean
   }) => api.post('/api/v1/kyc/submit', data),
   
   uploadDocument: (formData: FormData) => {

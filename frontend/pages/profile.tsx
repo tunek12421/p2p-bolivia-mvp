@@ -24,7 +24,10 @@ export default function ProfilePage() {
   const [selectedLevel, setSelectedLevel] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [activeTab, setActiveTab] = useState('profile')
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const ciFileInputRef = useRef<HTMLInputElement>(null)
+  const ciBackFileInputRef = useRef<HTMLInputElement>(null)
+  const selfieFileInputRef = useRef<HTMLInputElement>(null)
+  const addressFileInputRef = useRef<HTMLInputElement>(null)
 
   // Form states
   const [profileForm, setProfileForm] = useState({
@@ -37,11 +40,27 @@ export default function ProfilePage() {
   })
 
   const [kycForm, setKycForm] = useState({
+    first_name: '',
+    last_name: '',
     ci_number: '',
-    full_name: '',
+    ci_complement: '',
     date_of_birth: '',
-    address: ''
+    address: '',
+    city: '',
+    phone: '',
+    occupation: '',
+    income_source: '',
+    expected_volume: 0,
+    pep_status: false
   })
+
+  // File states - almacenar archivos seleccionados sin subir
+  const [selectedFiles, setSelectedFiles] = useState<{
+    ci?: File
+    ci_back?: File
+    selfie?: File
+    proof_address?: File
+  }>({})
 
   useEffect(() => {
     if (user) {
@@ -101,18 +120,67 @@ export default function ProfilePage() {
     }
   }
 
+  const handleFileSelection = (documentType: string, file: File) => {
+    console.log('📁 FILE: File selected:', documentType, file.name)
+    setSelectedFiles(prev => ({
+      ...prev,
+      [documentType.toLowerCase()]: file
+    }))
+  }
+
   const handleKycSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
       setIsSubmitting(true)
+      
+      // Primero subir todos los documentos seleccionados
+      const uploadPromises = []
+      
+      for (const [docType, file] of Object.entries(selectedFiles)) {
+        if (file) {
+          console.log('📤 UPLOAD: Uploading document:', docType, file.name)
+          const docTypeMapping: { [key: string]: string } = {
+            'ci': 'CI',
+            'ci_back': 'CI', // El servidor usa el mismo tipo para frente y reverso
+            'selfie': 'SELFIE',
+            'proof_address': 'PROOF_ADDRESS'
+          }
+          uploadPromises.push(handleDocumentUpload(docTypeMapping[docType], file))
+        }
+      }
+      
+      // Esperar a que se suban todos los documentos
+      if (uploadPromises.length > 0) {
+        await Promise.all(uploadPromises)
+        toast.success('Documentos subidos exitosamente')
+      }
+      
+      // Luego enviar el formulario KYC
       await kycAPI.submitKYC({
         kyc_level: selectedLevel,
-        ...kycForm
+        first_name: kycForm.first_name,
+        last_name: kycForm.last_name,
+        ci_number: kycForm.ci_number,
+        ci_complement: kycForm.ci_complement,
+        date_of_birth: kycForm.date_of_birth,
+        address: kycForm.address,
+        city: kycForm.city,
+        phone: kycForm.phone,
+        occupation: kycForm.occupation,
+        income_source: kycForm.income_source,
+        expected_volume: kycForm.expected_volume,
+        pep_status: kycForm.pep_status
       })
+      
       toast.success('KYC enviado para revisión')
+      
+      // Limpiar archivos seleccionados
+      setSelectedFiles({})
+      
       fetchProfileData()
     } catch (error) {
       toast.error('Error al enviar KYC')
+      console.error('Error in KYC submit:', error)
     } finally {
       setIsSubmitting(false)
     }
@@ -148,8 +216,28 @@ export default function ProfilePage() {
       const response = await kycAPI.uploadDocument(formData)
       console.log('✅ UPLOAD: Upload successful, response:', response)
       
-      toast.success('Documento subido exitosamente')
-      fetchProfileData()
+      toast.success(`Documento ${documentType} subido exitosamente`)
+      
+      // Only refresh KYC status without full page reload to prevent form reset
+      try {
+        const kycStatusPromise = kycAPI.getStatus().catch((e: any) => ({ error: e }))
+        const profilePromise = userAPI.getProfile().catch((e: any) => ({ error: e }))
+        
+        const [kycStatusRes, profileRes] = await Promise.all([
+          kycStatusPromise,
+          profilePromise
+        ])
+        
+        if (kycStatusRes && !('error' in kycStatusRes)) {
+          setKycStatus(kycStatusRes.data)
+        }
+        
+        if (profileRes && !('error' in profileRes)) {
+          setProfile(profileRes.data)
+        }
+      } catch (refreshError) {
+        console.log('Info: Could not refresh status after upload')
+      }
     } catch (error: any) {
       console.error('❌ UPLOAD: Upload failed, error details:', error)
       if (error.response) {
@@ -464,7 +552,7 @@ export default function ProfilePage() {
             </div>
 
             {/* KYC Form */}
-            {(!kycStatus || kycStatus.status === 'REJECTED' || kycStatus.status === 'UNDER_REVIEW') && (profile?.kyc_level || 0) < 3 && (
+            {(profile?.kyc_level || 0) < 3 && (
               <div className="card">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h3 className="text-lg font-medium text-gray-900">
@@ -492,32 +580,35 @@ export default function ProfilePage() {
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Número de CI
-                    </label>
-                    <input
-                      type="text"
-                      value={kycForm.ci_number}
-                      onChange={(e) => setKycForm({...kycForm, ci_number: e.target.value})}
-                      className="input w-full"
-                      placeholder="1234567 LP"
-                      required
-                    />
-                  </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Nombre Completo (como aparece en CI)
-                    </label>
-                    <input
-                      type="text"
-                      value={kycForm.full_name}
-                      onChange={(e) => setKycForm({...kycForm, full_name: e.target.value})}
-                      className="input w-full"
-                      placeholder="Juan Carlos Pérez López"
-                      required
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Nombre(s)
+                      </label>
+                      <input
+                        type="text"
+                        value={kycForm.first_name}
+                        onChange={(e) => setKycForm({...kycForm, first_name: e.target.value})}
+                        className="input w-full"
+                        placeholder="Juan Carlos"
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Apellido(s)
+                      </label>
+                      <input
+                        type="text"
+                        value={kycForm.last_name}
+                        onChange={(e) => setKycForm({...kycForm, last_name: e.target.value})}
+                        className="input w-full"
+                        placeholder="Pérez López"
+                        required
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -531,6 +622,65 @@ export default function ProfilePage() {
                       className="input w-full"
                       required
                     />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Número de CI
+                      </label>
+                      <input
+                        type="text"
+                        value={kycForm.ci_number}
+                        onChange={(e) => setKycForm({...kycForm, ci_number: e.target.value})}
+                        className="input w-full"
+                        placeholder="1234567"
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Complemento CI (opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={kycForm.ci_complement}
+                        onChange={(e) => setKycForm({...kycForm, ci_complement: e.target.value})}
+                        className="input w-full"
+                        placeholder="LP"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Ciudad
+                      </label>
+                      <input
+                        type="text"
+                        value={kycForm.city}
+                        onChange={(e) => setKycForm({...kycForm, city: e.target.value})}
+                        className="input w-full"
+                        placeholder="La Paz"
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Teléfono
+                      </label>
+                      <input
+                        type="tel"
+                        value={kycForm.phone}
+                        onChange={(e) => setKycForm({...kycForm, phone: e.target.value})}
+                        className="input w-full"
+                        placeholder="+591 7XXXXXXX"
+                        required
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -547,6 +697,71 @@ export default function ProfilePage() {
                     />
                   </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Ocupación
+                      </label>
+                      <input
+                        type="text"
+                        value={kycForm.occupation}
+                        onChange={(e) => setKycForm({...kycForm, occupation: e.target.value})}
+                        className="input w-full"
+                        placeholder="Ingeniero, Comerciante, etc."
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Fuente de Ingresos
+                      </label>
+                      <select
+                        value={kycForm.income_source}
+                        onChange={(e) => setKycForm({...kycForm, income_source: e.target.value})}
+                        className="input w-full"
+                        required
+                      >
+                        <option value="">Seleccionar...</option>
+                        <option value="salary">Salario</option>
+                        <option value="business">Negocio Propio</option>
+                        <option value="freelance">Trabajo Independiente</option>
+                        <option value="investments">Inversiones</option>
+                        <option value="other">Otro</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Volumen Esperado Mensual (USD)
+                      </label>
+                      <input
+                        type="number"
+                        value={kycForm.expected_volume}
+                        onChange={(e) => setKycForm({...kycForm, expected_volume: Number(e.target.value)})}
+                        className="input w-full"
+                        placeholder="1000"
+                        min="0"
+                        required
+                      />
+                    </div>
+                    
+                    <div className="flex items-center mt-6">
+                      <input
+                        type="checkbox"
+                        id="pep_status"
+                        checked={kycForm.pep_status}
+                        onChange={(e) => setKycForm({...kycForm, pep_status: e.target.checked})}
+                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="pep_status" className="ml-2 block text-sm text-gray-700">
+                        Soy una Persona Expuesta Políticamente (PEP)
+                      </label>
+                    </div>
+                  </div>
+
                   {/* Document Upload Section */}
                   <div className="border-t pt-6">
                     <h4 className="text-md font-medium text-gray-900 mb-4">Documentos Requeridos</h4>
@@ -558,23 +773,28 @@ export default function ProfilePage() {
                         <h5 className="text-sm font-medium text-gray-900 mb-2">CI - Frente</h5>
                         <p className="text-xs text-gray-500 mb-4">Imagen clara del frente de tu cédula</p>
                         <input
-                          ref={fileInputRef}
+                          ref={ciFileInputRef}
                           type="file"
                           accept="image/*"
                           onChange={(e) => {
                             const file = e.target.files?.[0]
-                            if (file) handleDocumentUpload('CI', file)  // Changed from 'CI_FRONT' to 'CI'
+                            if (file) {
+                              handleFileSelection('ci', file)
+                            }
                           }}
                           className="hidden"
                         />
                         <button
                           type="button"
-                          onClick={() => fileInputRef.current?.click()}
+                          onClick={() => ciFileInputRef.current?.click()}
                           className="btn-secondary text-xs"
                         >
                           <ArrowUpTrayIcon className="w-4 h-4 mr-1" />
-                          Subir Imagen
+                          {selectedFiles.ci ? selectedFiles.ci.name : 'Seleccionar Imagen'}
                         </button>
+                        {selectedFiles.ci && (
+                          <p className="text-xs text-green-600 mt-2">✓ Archivo seleccionado</p>
+                        )}
                       </div>
 
                       {/* CI Back */}
@@ -582,14 +802,29 @@ export default function ProfilePage() {
                         <DocumentTextIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                         <h5 className="text-sm font-medium text-gray-900 mb-2">CI - Reverso</h5>
                         <p className="text-xs text-gray-500 mb-4">Imagen clara del reverso de tu cédula</p>
+                        <input
+                          ref={ciBackFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              handleFileSelection('ci_back', file)
+                            }
+                          }}
+                          className="hidden"
+                        />
                         <button
                           type="button"
-                          onClick={() => fileInputRef.current?.click()}
+                          onClick={() => ciBackFileInputRef.current?.click()}
                           className="btn-secondary text-xs"
                         >
                           <ArrowUpTrayIcon className="w-4 h-4 mr-1" />
-                          Subir Imagen
+                          {selectedFiles.ci_back ? selectedFiles.ci_back.name : 'Seleccionar Imagen'}
                         </button>
+                        {selectedFiles.ci_back && (
+                          <p className="text-xs text-green-600 mt-2">✓ Archivo seleccionado</p>
+                        )}
                       </div>
                     </div>
 
@@ -600,10 +835,29 @@ export default function ProfilePage() {
                           <CameraIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                           <h5 className="text-sm font-medium text-gray-900 mb-2">Selfie con CI</h5>
                           <p className="text-xs text-gray-500 mb-4">Foto tuya sosteniendo tu cédula</p>
-                          <button type="button" className="btn-secondary text-xs">
+                          <input
+                            ref={selfieFileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (file) {
+                                handleFileSelection('selfie', file)
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          <button 
+                            type="button" 
+                            onClick={() => selfieFileInputRef.current?.click()}
+                            className="btn-secondary text-xs"
+                          >
                             <CameraIcon className="w-4 h-4 mr-1" />
-                            Tomar Foto
+                            {selectedFiles.selfie ? selectedFiles.selfie.name : 'Seleccionar Foto'}
                           </button>
+                          {selectedFiles.selfie && (
+                            <p className="text-xs text-green-600 mt-2">✓ Archivo seleccionado</p>
+                          )}
                         </div>
 
                         {/* Proof of Address */}
@@ -611,10 +865,29 @@ export default function ProfilePage() {
                           <DocumentTextIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                           <h5 className="text-sm font-medium text-gray-900 mb-2">Comprobante de Domicilio</h5>
                           <p className="text-xs text-gray-500 mb-4">Recibo de servicio o estado de cuenta</p>
-                          <button type="button" className="btn-secondary text-xs">
+                          <input
+                            ref={addressFileInputRef}
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (file) {
+                                handleFileSelection('proof_address', file)
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          <button 
+                            type="button" 
+                            onClick={() => addressFileInputRef.current?.click()}
+                            className="btn-secondary text-xs"
+                          >
                             <ArrowUpTrayIcon className="w-4 h-4 mr-1" />
-                            Subir Documento
+                            {selectedFiles.proof_address ? selectedFiles.proof_address.name : 'Seleccionar Documento'}
                           </button>
+                          {selectedFiles.proof_address && (
+                            <p className="text-xs text-green-600 mt-2">✓ Archivo seleccionado</p>
+                          )}
                         </div>
                       </div>
                     )}
@@ -626,7 +899,7 @@ export default function ProfilePage() {
                       disabled={isSubmitting}
                       className="btn-primary disabled:opacity-50"
                     >
-                      {isSubmitting ? 'Enviando...' : 'Enviar para Verificación'}
+                      {isSubmitting ? 'Subiendo documentos y enviando...' : 'Subir Documentos y Enviar para Verificación'}
                     </button>
                   </div>
                 </form>
