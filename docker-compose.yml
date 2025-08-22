@@ -104,9 +104,11 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID}
-      - PAYPAL_SECRET=${PAYPAL_SECRET}
+      - PAYPAL_CLIENT_SECRET=${PAYPAL_CLIENT_SECRET}
+      - PAYPAL_MODE=${PAYPAL_MODE:-sandbox}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - BANK_LISTENER_URL=http://python-listener:8000
+      - BASE_URL=${BASE_URL:-http://localhost:8080}
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
     depends_on:
       - postgres

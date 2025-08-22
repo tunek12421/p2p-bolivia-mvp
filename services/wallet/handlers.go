@@ -1,9 +1,7 @@
 package main
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -255,12 +253,13 @@ func (s *Server) handleDeposit(c *gin.Context) {
 	
 	// Insert transaction
 	_, err := s.db.Exec(`
-		INSERT INTO transactions (id, user_id, type, currency, amount, status, method, created_at, updated_at)
+		INSERT INTO transactions (id, from_user_id, transaction_type, currency, amount, status, payment_method, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`, tx.ID, tx.UserID, tx.Type, tx.Currency, tx.Amount, tx.Status, tx.Method, tx.CreatedAt, tx.UpdatedAt)
 	
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create deposit"})
+		fmt.Printf("Error creating deposit transaction: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create deposit", "details": err.Error()})
 		return
 	}
 	
@@ -337,7 +336,7 @@ func (s *Server) handleWithdrawal(c *gin.Context) {
 	
 	// Insert transaction
 	_, err = dbTx.Exec(`
-		INSERT INTO transactions (id, user_id, type, currency, amount, status, method, metadata, created_at, updated_at)
+		INSERT INTO transactions (id, from_user_id, transaction_type, currency, amount, status, payment_method, metadata, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`, tx.ID, tx.UserID, tx.Type, tx.Currency, tx.Amount, tx.Status, tx.Method, tx.Metadata, tx.CreatedAt, tx.UpdatedAt)
 	
@@ -422,7 +421,7 @@ func (s *Server) handleTransfer(c *gin.Context) {
 	// Create outgoing transaction
 	outTxID := s.generateTxID()
 	_, err = dbTx.Exec(`
-		INSERT INTO transactions (id, user_id, type, currency, amount, status, method, external_ref, created_at, updated_at)
+		INSERT INTO transactions (id, from_user_id, transaction_type, currency, amount, status, payment_method, payment_reference, created_at, updated_at)
 		VALUES ($1, $2, 'TRANSFER_OUT', $3, $4, 'COMPLETED', 'P2P', $5, NOW(), NOW())
 	`, outTxID, userID, fromCurrency, amount, req.RecipientID)
 	
@@ -434,7 +433,7 @@ func (s *Server) handleTransfer(c *gin.Context) {
 	// Create incoming transaction
 	inTxID := s.generateTxID()
 	_, err = dbTx.Exec(`
-		INSERT INTO transactions (id, user_id, type, currency, amount, status, method, external_ref, created_at, updated_at)
+		INSERT INTO transactions (id, to_user_id, transaction_type, currency, amount, status, payment_method, payment_reference, created_at, updated_at)
 		VALUES ($1, $2, 'TRANSFER_IN', $3, $4, 'COMPLETED', 'P2P', $5, NOW(), NOW())
 	`, inTxID, req.RecipientID, toCurrency, amount, userID)
 	
@@ -536,9 +535,18 @@ func (s *Server) createDefaultWallets(userID string) error {
 }
 
 func (s *Server) generateTxID() string {
-	timestamp := time.Now().UnixNano()
-	hash := sha256.Sum256([]byte(fmt.Sprintf("tx_%d", timestamp)))
-	return fmt.Sprintf("tx_%s", hex.EncodeToString(hash[:])[:16])
+	var txID string
+	err := s.db.QueryRow("SELECT uuid_generate_v4()").Scan(&txID)
+	if err != nil {
+		// Fallback to manual UUID generation if needed
+		return fmt.Sprintf("%08x-%04x-%04x-%04x-%12x",
+			time.Now().UnixNano()&0xffffffff,
+			time.Now().UnixNano()>>32&0xffff,
+			0x4000|(time.Now().UnixNano()>>16&0x0fff),
+			0x8000|(time.Now().UnixNano()>>8&0x3fff),
+			time.Now().UnixNano()&0xffffffffffff)
+	}
+	return txID
 }
 
 func (s *Server) authMiddleware() gin.HandlerFunc {

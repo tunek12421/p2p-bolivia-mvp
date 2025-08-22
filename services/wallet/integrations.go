@@ -85,8 +85,8 @@ func (s *Server) processPayPalDeposit(tx Transaction) gin.H {
 		"application_context": map[string]interface{}{
 			"brand_name": "P2P Bolivia",
 			"locale":     "en-US",
-			"return_url": fmt.Sprintf("%s/api/v1/paypal/success?tx_id=%s", os.Getenv("BASE_URL"), tx.ID),
-			"cancel_url": fmt.Sprintf("%s/api/v1/paypal/cancel?tx_id=%s", os.Getenv("BASE_URL"), tx.ID),
+			"return_url": fmt.Sprintf("http://localhost:8080/api/v1/paypal/success?tx_id=%s", tx.ID),
+			"cancel_url": fmt.Sprintf("http://localhost:8080/api/v1/paypal/cancel?tx_id=%s", tx.ID),
 		},
 	}
 	
@@ -493,6 +493,17 @@ func (s *Server) generateBankReference(txID string) string {
 	randomBytes := make([]byte, 4)
 	rand.Read(randomBytes)
 	return fmt.Sprintf("P2PB%s%X", txID[3:8], randomBytes)
+}
+
+func getBaseURL() string {
+	baseURL := os.Getenv("BASE_URL")
+	fmt.Printf("DEBUG: BASE_URL env var = '%s'\n", baseURL)
+	if baseURL == "" {
+		fmt.Println("DEBUG: Using fallback URL")
+		return "http://localhost:8080"
+	}
+	fmt.Printf("DEBUG: Using BASE_URL = '%s'\n", baseURL)
+	return baseURL
 }
 
 func (s *Server) getBankDetails(currency string) map[string]interface{} {

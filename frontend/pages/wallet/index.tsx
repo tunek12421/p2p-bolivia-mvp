@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useRequireAuth } from '../../lib/auth'
 import { walletAPI, WalletBalance, Transaction } from '../../lib/api'
 import DashboardLayout from '../../components/DashboardLayout'
+import PayPalDepositModal from '../../components/wallet/PayPalDepositModal'
+import PayPalWithdrawModal from '../../components/wallet/PayPalWithdrawModal'
 import Link from 'next/link'
 import { 
   PlusIcon,
@@ -20,6 +22,11 @@ export default function WalletPage() {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(true)
+  
+  // Modal states
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false)
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false)
+  const [selectedWallet, setSelectedWallet] = useState<WalletBalance | null>(null)
 
   useEffect(() => {
     if (user) {
@@ -136,6 +143,24 @@ export default function WalletPage() {
     }, 0)
   }
 
+  const handleDepositClick = (wallet: WalletBalance) => {
+    setSelectedWallet(wallet)
+    setIsDepositModalOpen(true)
+  }
+
+  const handleWithdrawClick = (wallet: WalletBalance) => {
+    if (wallet.balance - wallet.locked_balance <= 0) {
+      toast.error('No tienes fondos disponibles para retirar')
+      return
+    }
+    setSelectedWallet(wallet)
+    setIsWithdrawModalOpen(true)
+  }
+
+  const handleModalSuccess = () => {
+    fetchWalletData() // Actualizar datos después de una transacción exitosa
+  }
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -243,11 +268,18 @@ export default function WalletPage() {
                   </div>
                   
                   <div className="flex space-x-2 mt-4">
-                    <button className="btn-primary flex-1 text-sm py-2">
+                    <button 
+                      onClick={() => handleDepositClick(wallet)}
+                      className="btn-primary flex-1 text-sm py-2"
+                    >
                       <ArrowDownIcon className="w-4 h-4 mr-1" />
                       Depositar
                     </button>
-                    <button className="btn-secondary flex-1 text-sm py-2">
+                    <button 
+                      onClick={() => handleWithdrawClick(wallet)}
+                      className="btn-secondary flex-1 text-sm py-2"
+                      disabled={wallet.balance - wallet.locked_balance <= 0}
+                    >
                       <ArrowUpIcon className="w-4 h-4 mr-1" />
                       Retirar
                     </button>
@@ -321,26 +353,40 @@ export default function WalletPage() {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="card hover:shadow-md transition-shadow cursor-pointer">
+          <div 
+            className="card hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => wallets.length > 0 && handleDepositClick(wallets.find(w => w.currency === 'USD') || wallets[0])}
+          >
             <div className="flex items-center p-2">
               <div className="w-12 h-12 bg-success-100 rounded-lg flex items-center justify-center">
                 <ArrowDownIcon className="w-6 h-6 text-success-600" />
               </div>
               <div className="ml-4">
                 <h3 className="text-lg font-medium text-gray-900">Depositar</h3>
-                <p className="text-sm text-gray-500">Agregar fondos a tu billetera</p>
+                <p className="text-sm text-gray-500">Agregar fondos con PayPal</p>
               </div>
             </div>
           </div>
           
-          <div className="card hover:shadow-md transition-shadow cursor-pointer">
+          <div 
+            className="card hover:shadow-md transition-shadow cursor-pointer"
+            onClick={() => {
+              const usdWallet = wallets.find(w => w.currency === 'USD' && w.balance - w.locked_balance > 0)
+              const availableWallet = wallets.find(w => w.balance - w.locked_balance > 0)
+              if (usdWallet || availableWallet) {
+                handleWithdrawClick(usdWallet || availableWallet!)
+              } else {
+                toast.error('No tienes fondos disponibles para retirar')
+              }
+            }}
+          >
             <div className="flex items-center p-2">
               <div className="w-12 h-12 bg-danger-100 rounded-lg flex items-center justify-center">
                 <ArrowUpIcon className="w-6 h-6 text-danger-600" />
               </div>
               <div className="ml-4">
                 <h3 className="text-lg font-medium text-gray-900">Retirar</h3>
-                <p className="text-sm text-gray-500">Retirar fondos de tu billetera</p>
+                <p className="text-sm text-gray-500">Retirar fondos a PayPal</p>
               </div>
             </div>
           </div>
@@ -358,6 +404,24 @@ export default function WalletPage() {
           </Link>
         </div>
       </div>
+
+      {/* PayPal Modals */}
+      {selectedWallet && (
+        <>
+          <PayPalDepositModal
+            isOpen={isDepositModalOpen}
+            onClose={() => setIsDepositModalOpen(false)}
+            currency={selectedWallet.currency}
+            onSuccess={handleModalSuccess}
+          />
+          <PayPalWithdrawModal
+            isOpen={isWithdrawModalOpen}
+            onClose={() => setIsWithdrawModalOpen(false)}
+            wallet={selectedWallet}
+            onSuccess={handleModalSuccess}
+          />
+        </>
+      )}
     </DashboardLayout>
   )
 }
