@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	_ "image/png"  // Import PNG decoder
 	"io"
 	"net/http"
 	"path/filepath"
@@ -73,33 +74,53 @@ func (s *Server) handleSubmitKYC(c *gin.Context) {
 		return
 	}
 	
-	// Check for duplicate submission
+	// Check for existing submission
 	var existingID string
 	err := s.db.QueryRow(`
 		SELECT id FROM kyc_submissions 
-		WHERE user_id = $1 AND status = 'PENDING'
+		WHERE user_id = $1 AND status IN ('UNDER_REVIEW', 'PENDING')
 	`, userID).Scan(&existingID)
 	
-	if err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "KYC submission already pending"})
+	var submissionID string
+	if err == sql.ErrNoRows {
+		// Create new KYC submission
+		submissionID = uuid.New().String()
+		_, err = s.db.Exec(`
+			INSERT INTO kyc_submissions (
+				id, user_id, kyc_level, status, submitted_at,
+				verification_data
+			) VALUES ($1, $2, $3, $4, $5, $6)
+		`, submissionID, userID, req.KYCLevel, "PENDING", time.Now(), 
+		   fmt.Sprintf(`{"first_name":"%s","last_name":"%s","ci_number":"%s","ci_complement":"%s","date_of_birth":"%s","address":"%s","city":"%s","phone":"%s","occupation":"%s","income_source":"%s","expected_volume":%f,"pep_status":%t}`,
+			req.FirstName, req.LastName, req.CINumber, req.CIComplement, req.DateOfBirth, req.Address, req.City, req.Phone, req.Occupation, req.IncomeSource, req.ExpectedVolume, req.PEPStatus))
+		
+		if err != nil {
+			log.Printf("Error creating KYC submission for user %s: %v", userID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to submit KYC"})
+			return
+		}
+	} else if err != nil {
+		log.Printf("Error querying existing KYC submission for user %s: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing KYC"})
 		return
-	}
-	
-	// Create KYC submission
-	submissionID := uuid.New().String()
-	_, err = s.db.Exec(`
-		INSERT INTO kyc_submissions (
-			id, user_id, kyc_level, status, submitted_at,
-			verification_data
-		) VALUES ($1, $2, $3, $4, $5, $6)
-	`, submissionID, userID, req.KYCLevel, "PENDING", time.Now(), 
-	   fmt.Sprintf(`{"first_name":"%s","last_name":"%s","ci_number":"%s","ci_complement":"%s","date_of_birth":"%s","address":"%s","city":"%s","phone":"%s","occupation":"%s","income_source":"%s","expected_volume":%f,"pep_status":%t}`,
-		req.FirstName, req.LastName, req.CINumber, req.CIComplement, req.DateOfBirth, req.Address, req.City, req.Phone, req.Occupation, req.IncomeSource, req.ExpectedVolume, req.PEPStatus))
-	
-	if err != nil {
-		log.Printf("Error submitting KYC for user %s: %v", userID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to submit KYC"})
-		return
+	} else {
+		// Update existing submission
+		submissionID = existingID
+		_, err = s.db.Exec(`
+			UPDATE kyc_submissions 
+			SET kyc_level = $1, status = 'PENDING', submitted_at = $2,
+				verification_data = $3
+			WHERE id = $4
+		`, req.KYCLevel, time.Now(), 
+		   fmt.Sprintf(`{"first_name":"%s","last_name":"%s","ci_number":"%s","ci_complement":"%s","date_of_birth":"%s","address":"%s","city":"%s","phone":"%s","occupation":"%s","income_source":"%s","expected_volume":%f,"pep_status":%t}`,
+			req.FirstName, req.LastName, req.CINumber, req.CIComplement, req.DateOfBirth, req.Address, req.City, req.Phone, req.Occupation, req.IncomeSource, req.ExpectedVolume, req.PEPStatus),
+		   submissionID)
+		
+		if err != nil {
+			log.Printf("Error updating KYC submission for user %s: %v", userID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update KYC"})
+			return
+		}
 	}
 	
 	// Start automatic verification process
@@ -140,49 +161,68 @@ func (s *Server) handleUploadDocument(c *gin.Context) {
 	log.Printf("✅ KYC_UPLOAD: Document type validation passed")
 	
 	// Get file from request
+	log.Printf("📤 KYC_UPLOAD: Attempting to get file from form data")
 	file, header, err := c.Request.FormFile("document")
 	if err != nil {
+		log.Printf("❌ KYC_UPLOAD: Failed to get file from request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
 		return
 	}
 	defer file.Close()
+	log.Printf("✅ KYC_UPLOAD: File received - Name: %s, Size: %d bytes", header.Filename, header.Size)
 	
 	// Validate file size (max 10MB)
+	log.Printf("📤 KYC_UPLOAD: Validating file size (current: %d bytes, max: 10MB)", header.Size)
 	if header.Size > 10*1024*1024 {
+		log.Printf("❌ KYC_UPLOAD: File too large - %d bytes exceeds 10MB limit", header.Size)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File too large (max 10MB)"})
 		return
 	}
+	log.Printf("✅ KYC_UPLOAD: File size validation passed")
 	
 	// Validate file type
 	allowedTypes := map[string]bool{
 		".jpg": true, ".jpeg": true, ".png": true, ".pdf": true,
 	}
 	ext := strings.ToLower(filepath.Ext(header.Filename))
+	log.Printf("📤 KYC_UPLOAD: Validating file type - extension: '%s'", ext)
+	log.Printf("📤 KYC_UPLOAD: Allowed types: %v", allowedTypes)
 	if !allowedTypes[ext] {
+		log.Printf("❌ KYC_UPLOAD: Invalid file type '%s' not in allowed types", ext)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type"})
 		return
 	}
+	log.Printf("✅ KYC_UPLOAD: File type validation passed")
 	
 	// Process and compress image if needed
 	var processedData []byte
+	log.Printf("📤 KYC_UPLOAD: Starting file processing for extension: %s", ext)
 	if ext != ".pdf" {
+		log.Printf("📤 KYC_UPLOAD: Processing as image - calling processImage()")
 		processedData, err = s.processImage(file)
 		if err != nil {
+			log.Printf("❌ KYC_UPLOAD: Image processing failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process image"})
 			return
 		}
+		log.Printf("✅ KYC_UPLOAD: Image processed successfully - size after processing: %d bytes", len(processedData))
 	} else {
+		log.Printf("📤 KYC_UPLOAD: Processing as PDF - reading raw file data")
 		processedData, err = io.ReadAll(file)
 		if err != nil {
+			log.Printf("❌ KYC_UPLOAD: PDF reading failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file"})
 			return
 		}
+		log.Printf("✅ KYC_UPLOAD: PDF read successfully - size: %d bytes", len(processedData))
 	}
 	
 	// Upload to MinIO
 	fileName := fmt.Sprintf("%s/%s_%s%s", userID, docType, uuid.New().String(), ext)
+	log.Printf("📤 KYC_UPLOAD: Starting MinIO upload - fileName: %s", fileName)
 	
 	if s.minioClient != nil {
+		log.Printf("📤 KYC_UPLOAD: MinIO client available, uploading to bucket 'kyc-documents'")
 		_, err = s.minioClient.PutObject(
 			c.Request.Context(),
 			"kyc-documents",
@@ -192,30 +232,71 @@ func (s *Server) handleUploadDocument(c *gin.Context) {
 			minio.PutObjectOptions{ContentType: "application/octet-stream"},
 		)
 		if err != nil {
-			log.Printf("Failed to upload to MinIO: %v", err)
+			log.Printf("❌ KYC_UPLOAD: MinIO upload failed: %v", err)
+		} else {
+			log.Printf("✅ KYC_UPLOAD: MinIO upload successful")
 		}
+	} else {
+		log.Printf("⚠️ KYC_UPLOAD: MinIO client is nil - skipping file upload to storage")
+	}
+	
+	// Ensure user has a KYC submission - create one if it doesn't exist
+	var submissionID string
+	err = s.db.QueryRow(`
+		SELECT id FROM kyc_submissions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1
+	`, userID).Scan(&submissionID)
+	
+	if err == sql.ErrNoRows {
+		log.Printf("📤 KYC_UPLOAD: No KYC submission found, creating automatic submission")
+		submissionID = uuid.New().String()
+		_, err = s.db.Exec(`
+			INSERT INTO kyc_submissions (
+				id, user_id, kyc_level, status, submitted_at, verification_data
+			) VALUES ($1, $2, $3, $4, $5, $6)
+		`, submissionID, userID, 1, "UNDER_REVIEW", time.Now(), "{}")
+		
+		if err != nil {
+			log.Printf("❌ KYC_UPLOAD: Failed to create automatic submission: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create KYC submission"})
+			return
+		}
+		log.Printf("✅ KYC_UPLOAD: Automatic submission created with ID: %s", submissionID)
+	} else if err != nil {
+		log.Printf("❌ KYC_UPLOAD: Failed to query existing submission: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process KYC submission"})
+		return
+	} else {
+		log.Printf("✅ KYC_UPLOAD: Using existing submission ID: %s", submissionID)
 	}
 	
 	// Save document record
 	docID := uuid.New().String()
+	log.Printf("📤 KYC_UPLOAD: Saving document record to database - docID: %s", docID)
+	log.Printf("📤 KYC_UPLOAD: Document details - userID: %s, docType: %s, fileName: %s, size: %d", 
+		userID, docType, fileName, len(processedData))
+	
 	_, err = s.db.Exec(`
 		INSERT INTO kyc_documents (
 			id, submission_id, document_type, file_path, file_size, mime_type, created_at
-		) VALUES ($1, 
-			(SELECT id FROM kyc_submissions WHERE user_id = $2 ORDER BY created_at DESC LIMIT 1),
-			$3, $4, $5, $6, $7)
-	`, docID, userID, docType, fileName, len(processedData), header.Header.Get("Content-Type"), time.Now())
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, docID, submissionID, docType, fileName, len(processedData), header.Header.Get("Content-Type"), time.Now())
 	
 	if err != nil {
+		log.Printf("❌ KYC_UPLOAD: Database save failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save document"})
 		return
 	}
+	log.Printf("✅ KYC_UPLOAD: Document record saved successfully in database")
 	
 	// Perform OCR if it's a CI document
 	if docType == "CI" {
+		log.Printf("📤 KYC_UPLOAD: Document type is CI - starting OCR process in background")
 		go s.performOCR(docID, processedData)
+	} else {
+		log.Printf("📤 KYC_UPLOAD: Document type is %s - skipping OCR", docType)
 	}
 	
+	log.Printf("📤 KYC_UPLOAD: Upload process completed successfully - returning response")
 	c.JSON(http.StatusOK, gin.H{
 		"document_id": docID,
 		"status":      "uploaded",
@@ -228,6 +309,7 @@ func (s *Server) handleGetKYCStatus(c *gin.Context) {
 	
 	var submission KYCSubmission
 	var verificationData sql.NullString
+	var rejectionReason sql.NullString
 	err := s.db.QueryRow(`
 		SELECT id, user_id, kyc_level, status, submitted_at, reviewed_at, reviewed_by, rejection_reason, verification_data
 		FROM kyc_submissions 
@@ -236,7 +318,12 @@ func (s *Server) handleGetKYCStatus(c *gin.Context) {
 		LIMIT 1
 	`, userID).Scan(&submission.ID, &submission.UserID, &submission.KYCLevel, 
 		&submission.Status, &submission.SubmittedAt, &submission.ReviewedAt, 
-		&submission.ReviewedBy, &submission.RejectionReason, &verificationData)
+		&submission.ReviewedBy, &rejectionReason, &verificationData)
+	
+	// Handle nullable rejection_reason
+	if rejectionReason.Valid {
+		submission.RejectionReason = rejectionReason.String
+	}
 	
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "No KYC submission found"})
@@ -517,23 +604,41 @@ func (s *Server) validateCINumber(ci string) bool {
 }
 
 func (s *Server) processImage(file io.Reader) ([]byte, error) {
-	img, _, err := image.Decode(file)
+	log.Printf("🖼️ KYC_IMAGE_PROCESS: Starting image processing")
+	
+	img, format, err := image.Decode(file)
 	if err != nil {
+		log.Printf("❌ KYC_IMAGE_PROCESS: Image decode failed: %v", err)
 		return nil, err
 	}
+	log.Printf("✅ KYC_IMAGE_PROCESS: Image decoded successfully - format: %s", format)
 	
 	// Resize if too large
 	bounds := img.Bounds()
+	originalWidth := bounds.Max.X
+	originalHeight := bounds.Max.Y
+	log.Printf("🖼️ KYC_IMAGE_PROCESS: Original dimensions: %dx%d", originalWidth, originalHeight)
+	
 	if bounds.Max.X > 1024 || bounds.Max.Y > 1024 {
+		log.Printf("🖼️ KYC_IMAGE_PROCESS: Image too large, resizing to max 1024px")
 		img = resize.Resize(1024, 0, img, resize.Lanczos3)
+		newBounds := img.Bounds()
+		log.Printf("✅ KYC_IMAGE_PROCESS: Image resized to: %dx%d", newBounds.Max.X, newBounds.Max.Y)
+	} else {
+		log.Printf("✅ KYC_IMAGE_PROCESS: Image size acceptable, no resizing needed")
 	}
 	
 	// Compress as JPEG
+	log.Printf("🖼️ KYC_IMAGE_PROCESS: Compressing as JPEG with quality 80")
 	var buf bytes.Buffer
 	err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80})
 	if err != nil {
+		log.Printf("❌ KYC_IMAGE_PROCESS: JPEG encoding failed: %v", err)
 		return nil, err
 	}
+	
+	finalSize := buf.Len()
+	log.Printf("✅ KYC_IMAGE_PROCESS: Image processing completed - final size: %d bytes", finalSize)
 	
 	return buf.Bytes(), nil
 }
@@ -551,20 +656,38 @@ func (s *Server) performAutomaticVerification(submissionID string) {
 }
 
 func (s *Server) performOCR(docID string, imageData []byte) {
+	log.Printf("🔍 KYC_OCR: Starting OCR process for document ID: %s", docID)
+	log.Printf("🔍 KYC_OCR: Image data size: %d bytes", len(imageData))
+	
 	// Simulate OCR processing
+	log.Printf("🔍 KYC_OCR: Simulating OCR processing (in production this would use real OCR service)")
 	ocrResults := map[string]string{
 		"full_name": "JUAN CARLOS PEREZ GONZALEZ",
 		"ci_number": "12345678",
 		"birth_date": "15/03/1990",
 	}
 	
-	ocrJSON, _ := json.Marshal(ocrResults)
+	ocrJSON, err := json.Marshal(ocrResults)
+	if err != nil {
+		log.Printf("❌ KYC_OCR: Failed to marshal OCR results: %v", err)
+		return
+	}
+	log.Printf("✅ KYC_OCR: OCR processing completed - results: %s", string(ocrJSON))
 	
-	s.db.Exec(`
+	log.Printf("🔍 KYC_OCR: Updating document status in database")
+	result, err := s.db.Exec(`
 		UPDATE kyc_documents 
 		SET status = 'VERIFIED', ocr_data = $1
 		WHERE id = $2
 	`, string(ocrJSON), docID)
+	
+	if err != nil {
+		log.Printf("❌ KYC_OCR: Failed to update document status: %v", err)
+		return
+	}
+	
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✅ KYC_OCR: Document status updated successfully - rows affected: %d", rowsAffected)
 }
 
 func (s *Server) performFaceVerification(userID string, selfieData []byte) bool {

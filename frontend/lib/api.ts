@@ -264,13 +264,14 @@ export const kycAPI = {
   uploadDocument: (formData: FormData) => {
     console.log('🌐 KYC_API: Starting uploadDocument call')
     console.log('🌐 KYC_API: FormData entries:')
-    for (let [key, value] of formData.entries()) {
+    const entries = Array.from(formData.entries())
+    entries.forEach(([key, value]) => {
       if (value instanceof File) {
         console.log(`  ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`)
       } else {
         console.log(`  ${key}: ${value}`)
       }
-    }
+    })
     
     return api.post('/api/v1/kyc/upload-document', formData, {
       headers: {

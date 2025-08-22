@@ -158,6 +158,15 @@ export const kycService = {
   },
 
   uploadDocument: async (type: string, file: any) => {
+    console.log('📱 KYC_FRONTEND: Starting document upload');
+    console.log('📱 KYC_FRONTEND: Document type:', type);
+    console.log('📱 KYC_FRONTEND: File details:', {
+      uri: file.uri,
+      type: file.type,
+      name: file.name,
+      size: file.size || 'unknown'
+    });
+
     const formData = new FormData();
     formData.append('type', type);
     formData.append('document', {
@@ -166,12 +175,25 @@ export const kycService = {
       name: file.name,
     } as any);
 
-    const response = await api.post('/api/v1/kyc/upload-document', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return response.data;
+    console.log('📱 KYC_FRONTEND: FormData created, making API request to /api/v1/kyc/upload-document');
+
+    try {
+      const response = await api.post('/api/v1/kyc/upload-document', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      console.log('📱 KYC_FRONTEND: Upload successful, response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('📱 KYC_FRONTEND: Upload failed:', error);
+      console.error('📱 KYC_FRONTEND: Error details:', {
+        message: error?.message,
+        status: error?.status,
+        data: error?.data
+      });
+      throw error;
+    }
   },
 };
 

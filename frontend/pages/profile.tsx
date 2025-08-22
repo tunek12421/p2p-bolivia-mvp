@@ -135,13 +135,14 @@ export default function ProfilePage() {
       formData.append('type', documentType)
       
       console.log('📤 UPLOAD: FormData created, entries:')
-      for (let [key, value] of formData.entries()) {
+      const entries = Array.from(formData.entries())
+      entries.forEach(([key, value]) => {
         if (value instanceof File) {
           console.log(`  ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`)
         } else {
           console.log(`  ${key}: ${value}`)
         }
-      }
+      })
       
       console.log('📤 UPLOAD: Calling kycAPI.uploadDocument')
       const response = await kycAPI.uploadDocument(formData)
@@ -149,7 +150,7 @@ export default function ProfilePage() {
       
       toast.success('Documento subido exitosamente')
       fetchProfileData()
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ UPLOAD: Upload failed, error details:', error)
       if (error.response) {
         console.error('❌ UPLOAD: Response error data:', error.response.data)
@@ -463,7 +464,7 @@ export default function ProfilePage() {
             </div>
 
             {/* KYC Form */}
-            {(!kycStatus || kycStatus.status === 'REJECTED') && (profile?.kyc_level || 0) < 3 && (
+            {(!kycStatus || kycStatus.status === 'REJECTED' || kycStatus.status === 'UNDER_REVIEW') && (profile?.kyc_level || 0) < 3 && (
               <div className="card">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h3 className="text-lg font-medium text-gray-900">
