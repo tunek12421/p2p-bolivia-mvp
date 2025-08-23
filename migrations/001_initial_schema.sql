@@ -71,20 +71,76 @@ CREATE TABLE transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     from_user_id UUID REFERENCES users(id),
     to_user_id UUID REFERENCES users(id),
+    user_id UUID REFERENCES users(id),
     order_id UUID REFERENCES p2p_orders(id),
     transaction_type VARCHAR(20) NOT NULL,
+    type VARCHAR(20),
     amount DECIMAL(20,8) NOT NULL CHECK (amount > 0),
     currency VARCHAR(10) NOT NULL,
     fee DECIMAL(20,8) DEFAULT 0,
     status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED')),
     payment_method VARCHAR(50),
+    method VARCHAR(50),
     payment_reference VARCHAR(255),
+    external_ref VARCHAR(255),
     escrow_released BOOLEAN DEFAULT false,
     notes TEXT,
     metadata JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP WITH TIME ZONE,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Wallet Transactions (for wallet service)
+CREATE TABLE wallet_transactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id),
+    transaction_type VARCHAR(20) NOT NULL,
+    currency VARCHAR(10) NOT NULL,
+    amount DECIMAL(20,8) NOT NULL CHECK (amount > 0),
+    status VARCHAR(20) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED')),
+    method VARCHAR(50),
+    external_ref VARCHAR(255),
+    metadata JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Orders table (for P2P service compatibility)
+CREATE TABLE orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id),
+    order_type VARCHAR(10) NOT NULL CHECK (order_type IN ('BUY', 'SELL')),
+    currency_from VARCHAR(10) NOT NULL,
+    currency_to VARCHAR(10) NOT NULL,
+    amount DECIMAL(20,8) NOT NULL CHECK (amount > 0),
+    remaining_amount DECIMAL(20,8) NOT NULL CHECK (remaining_amount >= 0),
+    rate DECIMAL(20,8) NOT NULL CHECK (rate > 0),
+    status VARCHAR(20) DEFAULT 'ACTIVE',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- P2P matches table  
+CREATE TABLE p2p_matches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    buy_order_id UUID NOT NULL REFERENCES orders(id),
+    sell_order_id UUID NOT NULL REFERENCES orders(id),
+    amount DECIMAL(20,8) NOT NULL,
+    rate DECIMAL(20,8) NOT NULL,
+    status VARCHAR(20) DEFAULT 'PENDING',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Deposit accounts for banking
+CREATE TABLE deposit_accounts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    currency VARCHAR(10) NOT NULL,
+    account_holder VARCHAR(255) NOT NULL,
+    bank VARCHAR(255) NOT NULL,
+    account_number VARCHAR(50) NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Bank Notifications (for bank listener)
@@ -134,8 +190,13 @@ CREATE INDEX idx_orders_user_id ON p2p_orders(user_id);
 CREATE INDEX idx_orders_status ON p2p_orders(status);
 CREATE INDEX idx_orders_currencies ON p2p_orders(currency_from, currency_to);
 CREATE INDEX idx_transactions_users ON transactions(from_user_id, to_user_id);
+CREATE INDEX idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX idx_transactions_status ON transactions(status);
 CREATE INDEX idx_transactions_order ON transactions(order_id);
+CREATE INDEX idx_wallet_transactions_user ON wallet_transactions(user_id);
+CREATE INDEX idx_wallet_transactions_status ON wallet_transactions(status);
+CREATE INDEX idx_orders_user_id ON orders(user_id);
+CREATE INDEX idx_deposit_accounts_currency ON deposit_accounts(currency);
 CREATE INDEX idx_bank_notifications_transaction ON bank_notifications(transaction_id);
 CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
 CREATE INDEX idx_audit_logs_user ON audit_logs(user_id);
@@ -163,4 +224,10 @@ CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON p2p_orders
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 CREATE TRIGGER update_transactions_updated_at BEFORE UPDATE ON transactions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER update_wallet_transactions_updated_at BEFORE UPDATE ON wallet_transactions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();

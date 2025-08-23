@@ -156,15 +156,22 @@ export const walletAPI = {
   deposit: (data: {
     currency: string
     amount: number
-    method: 'BANK' | 'PAYPAL' | 'STRIPE' | 'QR'
+    method: 'BANK' | 'QR'
   }) => api.post('/api/v1/deposit', data),
   
   withdraw: (data: {
     currency: string
     amount: number
-    method: 'BANK' | 'PAYPAL' | 'STRIPE'
-    destination: any
+    method: 'BANK'
+    destination?: {
+      account_holder?: string
+      bank?: string
+      account_number?: string
+    }
   }) => api.post('/api/v1/withdraw', data),
+  
+  getDepositInstructions: (currency: string, amount: number) => 
+    api.get(`/api/v1/deposit-instructions/${currency}`, { params: { amount } }),
   
   transfer: (data: {
     from_currency: string
@@ -220,7 +227,7 @@ export interface Transaction {
   type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'FEE'
   currency: string
   amount: number
-  status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
   method: 'BANK' | 'PAYPAL' | 'STRIPE' | 'QR' | 'P2P'
   external_ref?: string
   metadata?: string

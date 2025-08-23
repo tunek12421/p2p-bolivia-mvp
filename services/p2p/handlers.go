@@ -50,6 +50,7 @@ func (s *Server) handleGetOrders(c *gin.Context) {
 		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
 			rate, min_amount, max_amount, payment_methods, status, created_at
 		FROM p2p_orders
+		WHERE status IN ('MATCHED', 'PROCESSING')
 	`
 	
 	if currencyFrom != "" {
@@ -65,19 +66,19 @@ func (s *Server) handleGetOrders(c *gin.Context) {
 	}
 	
 	if orderType != "" {
-		conditions = append(conditions, fmt.Sprintf("type = $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("order_type = $%d", argIndex))
 		args = append(args, orderType)
 		argIndex++
 	}
 	
-	if status != "" {
+	if status != "" && (status == "MATCHED" || status == "PROCESSING") {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, status)
 		argIndex++
 	}
 	
 	if len(conditions) > 0 {
-		baseQuery += " WHERE " + strings.Join(conditions, " AND ")
+		baseQuery += " AND " + strings.Join(conditions, " AND ")
 	}
 	
 	baseQuery += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
@@ -158,15 +159,19 @@ func (s *Server) handleCreateOrder(c *gin.Context) {
 		CreatedAt:       time.Now(),
 	}
 	
-	// Add to matching engine
-	matches, err := s.engine.AddOrder(order)
+	// Set expiration time (24 hours from now)
+	expiresAt := time.Now().Add(24 * time.Hour)
+	order.ExpiresAt = &expiresAt
+	
+	// Add to matching engine (no automatic matching)
+	orderID, err := s.engine.AddOrder(order)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create order"})
 		return
 	}
 	
 	response := OrderResponse{
-		ID:              order.ID,
+		ID:              orderID,
 		UserID:          order.UserID,
 		Type:            order.Type,
 		CurrencyFrom:    order.CurrencyFrom,
@@ -177,15 +182,13 @@ func (s *Server) handleCreateOrder(c *gin.Context) {
 		MinAmount:       order.MinAmount,
 		MaxAmount:       order.MaxAmount,
 		PaymentMethods:  order.PaymentMethods,
-		Status:          order.Status,
+		Status:          "PENDING", // Orders start as PENDING, waiting for cashier
 		CreatedAt:       order.CreatedAt,
-		Matches:         matches,
 	}
 	
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "Order created successfully",
+		"message": "Order created successfully - waiting for cashier acceptance",
 		"order":   response,
-		"matches": len(matches),
 	})
 }
 

@@ -113,9 +113,7 @@ func (s *Server) setupRoutes() {
 		api.GET("/deposit-instructions/:currency", s.authMiddleware(), s.handleGetDepositInstructions)
 		api.GET("/pending-deposits", s.authMiddleware(), s.handleGetPendingDeposits)
 		
-		// Payment integration webhooks
-		api.POST("/webhooks/paypal", s.handlePayPalWebhook)
-		api.POST("/webhooks/stripe", s.handleStripeWebhook)
+		// Payment integration webhooks (Bolivia only)
 		api.POST("/webhooks/bank", s.handleBankWebhook)
 	}
 }
@@ -135,6 +133,8 @@ func (s *Server) handleGetExchangeRates(c *gin.Context) {
 	c.JSON(200, rates)
 }
 
+// DISABLED: PayPal not available in Bolivia
+/*
 func (s *Server) handlePayPalWebhook(c *gin.Context) {
 	// Handle PayPal webhooks for payment confirmations
 	var webhook map[string]interface{}
@@ -160,7 +160,10 @@ func (s *Server) handlePayPalWebhook(c *gin.Context) {
 	
 	c.JSON(200, gin.H{"status": "received"})
 }
+*/
 
+// DISABLED: Stripe not available in Bolivia  
+/*
 func (s *Server) handleStripeWebhook(c *gin.Context) {
 	// Handle Stripe webhooks
 	var webhook map[string]interface{}
@@ -184,6 +187,7 @@ func (s *Server) handleStripeWebhook(c *gin.Context) {
 	
 	c.JSON(200, gin.H{"status": "received"})
 }
+*/
 
 func (s *Server) handleBankWebhook(c *gin.Context) {
 	// Handle bank transfer confirmations

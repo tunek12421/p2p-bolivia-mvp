@@ -28,6 +28,7 @@ type Server struct {
 type Order struct {
     ID             string          `json:"id"`
     UserID         string          `json:"user_id"`
+    CashierID      *string         `json:"cashier_id,omitempty"` // Cashier who accepted the order
     Type           string          `json:"type"` // BUY or SELL
     CurrencyFrom   string          `json:"currency_from"`
     CurrencyTo     string          `json:"currency_to"`
@@ -38,6 +39,8 @@ type Order struct {
     MaxAmount      decimal.Decimal `json:"max_amount"`
     PaymentMethods []string        `json:"payment_methods"`
     Status         string          `json:"status"`
+    AcceptedAt     *time.Time      `json:"accepted_at,omitempty"`
+    ExpiresAt      *time.Time      `json:"expires_at,omitempty"`
     CreatedAt      time.Time       `json:"created_at"`
 }
 
@@ -137,6 +140,16 @@ func (s *Server) setupRoutes() {
         // Market data
         api.GET("/market/depth", s.handleGetMarketDepth)
     }
+
+    // Cashier routes
+    cashier := api.Group("/cashier").Use(s.authMiddleware(), s.cashierMiddleware())
+    {
+        cashier.GET("/pending-orders", s.handleGetPendingOrders)
+        cashier.POST("/orders/:id/accept", s.handleAcceptOrder)
+        cashier.POST("/orders/:id/confirm-payment", s.handleConfirmPayment)
+        cashier.GET("/my-orders", s.handleGetCashierOrders)
+        cashier.GET("/metrics", s.handleGetCashierMetrics)
+    }
 }
 
 
@@ -166,5 +179,27 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
             c.Set("user_id", userID)
             c.Next()
         }
+    }
+}
+
+func (s *Server) cashierMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        userID := c.GetString("user_id")
+        if userID == "" {
+            c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+            c.Abort()
+            return
+        }
+        
+        // Check if user is a verified cashier
+        var isCashier bool
+        err := s.db.QueryRow("SELECT is_cashier FROM users WHERE id = $1", userID).Scan(&isCashier)
+        if err != nil || !isCashier {
+            c.JSON(http.StatusForbidden, gin.H{"error": "Only verified cashiers can access this endpoint"})
+            c.Abort()
+            return
+        }
+        
+        c.Next()
     }
 }

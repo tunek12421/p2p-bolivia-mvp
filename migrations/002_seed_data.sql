@@ -27,3 +27,8 @@ INSERT INTO p2p_orders (user_id, order_type, currency_from, currency_to, amount,
 VALUES 
     ('11111111-1111-1111-1111-111111111111', 'SELL', 'USD', 'BOB', 100.00, 100.00, 6.90, ARRAY['bank_transfer', 'qr_simple'], 'ACTIVE'),
     ('22222222-2222-2222-2222-222222222222', 'BUY', 'USD', 'BOB', 50.00, 50.00, 6.85, ARRAY['bank_transfer'], 'ACTIVE');
+
+-- Insert default deposit accounts for banking
+INSERT INTO deposit_accounts (currency, account_holder, bank, account_number) VALUES
+('BOB', 'P2P Bolivia SRL', 'Banco Nacional de Bolivia', '1234567890'),
+('USD', 'P2P Bolivia SRL', 'Banco Nacional de Bolivia', '0987654321');

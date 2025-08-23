@@ -156,9 +156,9 @@ func (s *Server) handleGetTransactions(c *gin.Context) {
 	argIndex := 1
 	
 	baseQuery := `
-		SELECT id, user_id, type, currency, amount, status, method, external_ref, metadata, created_at, updated_at
+		SELECT id, COALESCE(user_id, from_user_id) as user_id, COALESCE(type, transaction_type) as type, currency, amount, status, COALESCE(method, payment_method) as method, COALESCE(external_ref, payment_reference) as external_ref, metadata, created_at, updated_at
 		FROM transactions
-		WHERE user_id = $1
+		WHERE COALESCE(user_id, from_user_id) = $1 OR to_user_id = $1
 	`
 	args = append(args, userID)
 	argIndex++
@@ -251,10 +251,10 @@ func (s *Server) handleDeposit(c *gin.Context) {
 		UpdatedAt: time.Now(),
 	}
 	
-	// Insert transaction
+	// Insert transaction (using both old and new fields for compatibility)
 	_, err := s.db.Exec(`
-		INSERT INTO transactions (id, from_user_id, transaction_type, currency, amount, status, payment_method, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO transactions (id, user_id, from_user_id, type, transaction_type, currency, amount, status, method, payment_method, external_ref, created_at, updated_at)
+		VALUES ($1, $2, $2, $3, $3, $4, $5, $6, $7, $7, '', $8, $9)
 	`, tx.ID, tx.UserID, tx.Type, tx.Currency, tx.Amount, tx.Status, tx.Method, tx.CreatedAt, tx.UpdatedAt)
 	
 	if err != nil {
@@ -266,16 +266,12 @@ func (s *Server) handleDeposit(c *gin.Context) {
 	// Process based on method
 	var response gin.H
 	switch req.Method {
-	case "PAYPAL":
-		response = s.processPayPalDeposit(tx)
-	case "STRIPE":
-		response = s.processStripeDeposit(tx)
 	case "QR":
 		response = s.processQRDeposit(tx)
 	case "BANK":
 		response = s.processBankDeposit(tx)
 	default:
-		response = gin.H{"error": "Unsupported deposit method"}
+		response = gin.H{"error": "Payment method not available in Bolivia. Use BANK or QR instead."}
 	}
 	
 	response["transaction_id"] = txID
@@ -334,10 +330,10 @@ func (s *Server) handleWithdrawal(c *gin.Context) {
 	}
 	defer dbTx.Rollback()
 	
-	// Insert transaction
+	// Insert transaction (using both old and new fields for compatibility)
 	_, err = dbTx.Exec(`
-		INSERT INTO transactions (id, from_user_id, transaction_type, currency, amount, status, payment_method, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO transactions (id, user_id, from_user_id, type, transaction_type, currency, amount, status, method, payment_method, metadata, created_at, updated_at)
+		VALUES ($1, $2, $2, $3, $3, $4, $5, $6, $7, $7, $8, $9, $10)
 	`, tx.ID, tx.UserID, tx.Type, tx.Currency, tx.Amount, tx.Status, tx.Method, tx.Metadata, tx.CreatedAt, tx.UpdatedAt)
 	
 	if err != nil {
@@ -365,14 +361,10 @@ func (s *Server) handleWithdrawal(c *gin.Context) {
 	// Process withdrawal
 	var response gin.H
 	switch req.Method {
-	case "PAYPAL":
-		response = s.processPayPalWithdrawal(tx)
-	case "STRIPE":
-		response = s.processStripeWithdrawal(tx)
 	case "BANK":
 		response = s.processBankWithdrawal(tx)
 	default:
-		response = gin.H{"error": "Unsupported withdrawal method"}
+		response = gin.H{"error": "Payment method not available in Bolivia. Use BANK instead."}
 	}
 	
 	response["transaction_id"] = txID
@@ -421,8 +413,8 @@ func (s *Server) handleTransfer(c *gin.Context) {
 	// Create outgoing transaction
 	outTxID := s.generateTxID()
 	_, err = dbTx.Exec(`
-		INSERT INTO transactions (id, from_user_id, transaction_type, currency, amount, status, payment_method, payment_reference, created_at, updated_at)
-		VALUES ($1, $2, 'TRANSFER_OUT', $3, $4, 'COMPLETED', 'P2P', $5, NOW(), NOW())
+		INSERT INTO transactions (id, user_id, from_user_id, type, transaction_type, currency, amount, status, method, payment_method, external_ref, payment_reference, created_at, updated_at)
+		VALUES ($1, $2, $2, 'TRANSFER_OUT', 'TRANSFER_OUT', $3, $4, 'COMPLETED', 'P2P', 'P2P', $5, $5, NOW(), NOW())
 	`, outTxID, userID, fromCurrency, amount, req.RecipientID)
 	
 	if err != nil {
@@ -430,11 +422,11 @@ func (s *Server) handleTransfer(c *gin.Context) {
 		return
 	}
 	
-	// Create incoming transaction
+	// Create incoming transaction (for recipient)
 	inTxID := s.generateTxID()
 	_, err = dbTx.Exec(`
-		INSERT INTO transactions (id, to_user_id, transaction_type, currency, amount, status, payment_method, payment_reference, created_at, updated_at)
-		VALUES ($1, $2, 'TRANSFER_IN', $3, $4, 'COMPLETED', 'P2P', $5, NOW(), NOW())
+		INSERT INTO transactions (id, user_id, to_user_id, type, transaction_type, currency, amount, status, method, payment_method, external_ref, payment_reference, created_at, updated_at)
+		VALUES ($1, $2, $2, 'TRANSFER_IN', 'TRANSFER_IN', $3, $4, 'COMPLETED', 'P2P', 'P2P', $5, $5, NOW(), NOW())
 	`, inTxID, req.RecipientID, toCurrency, amount, userID)
 	
 	if err != nil {
@@ -490,9 +482,9 @@ func (s *Server) handleGetTransaction(c *gin.Context) {
 	var metadata, externalRef sql.NullString
 	
 	err := s.db.QueryRow(`
-		SELECT id, user_id, type, currency, amount, status, method, external_ref, metadata, created_at, updated_at
+		SELECT id, COALESCE(user_id, from_user_id) as user_id, COALESCE(type, transaction_type) as type, currency, amount, status, COALESCE(method, payment_method) as method, COALESCE(external_ref, payment_reference) as external_ref, metadata, created_at, updated_at
 		FROM transactions
-		WHERE id = $1 AND user_id = $2
+		WHERE id = $1 AND (COALESCE(user_id, from_user_id) = $2 OR to_user_id = $2)
 	`, txID, userID).Scan(&tx.ID, &tx.UserID, &tx.Type, &tx.Currency, &tx.Amount,
 		&tx.Status, &tx.Method, &externalRef, &metadata, &tx.CreatedAt, &tx.UpdatedAt)
 	

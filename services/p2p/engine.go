@@ -21,8 +21,10 @@ type MatchingEngine struct {
 type Match struct {
 	BuyOrder  Order           `json:"buy_order"`
 	SellOrder Order           `json:"sell_order"`
+	CashierID string          `json:"cashier_id"`
 	Amount    decimal.Decimal `json:"amount"`
 	Rate      decimal.Decimal `json:"rate"`
+	Status    string          `json:"status"`
 	MatchedAt time.Time       `json:"matched_at"`
 }
 
@@ -39,17 +41,19 @@ func NewMatchingEngine(db *sql.DB, redis *redis.Client) *MatchingEngine {
 }
 
 func (e *MatchingEngine) Start() {
-	log.Println("🚀 Matching engine started - monitoring for new orders")
+	log.Println("🚀 Matching engine started - monitoring for pending orders")
 	
 	// Start order book cache refresh
 	go e.refreshOrderBookCache()
 	
-	// Start matching loop
-	go e.matchingLoop()
+	// Note: Removed automatic matching loop - cashiers now accept orders manually
 }
 
-func (e *MatchingEngine) AddOrder(order Order) ([]string, error) {
+func (e *MatchingEngine) AddOrder(order Order) (string, error) {
 	ctx := context.Background()
+	
+	// Set order status to PENDING - cashiers will accept manually
+	order.Status = "PENDING"
 	
 	// Insert order into database
 	query := `
@@ -67,32 +71,37 @@ func (e *MatchingEngine) AddOrder(order Order) ([]string, error) {
 	)
 	
 	if err != nil {
-		return nil, fmt.Errorf("failed to insert order: %v", err)
+		return "", fmt.Errorf("failed to insert order: %v", err)
 	}
 	
-	// Add to Redis for fast matching
-	e.cacheOrder(ctx, order)
+	// Add to Redis cache for cashiers to see pending orders
+	e.cachePendingOrder(ctx, order)
 	
-	// Try to match immediately
-	matches := e.findMatches(order)
-	var matchIDs []string
+	// Notify available cashiers (in real implementation, this would send notifications)
+	log.Printf("📝 New %s order created: %s (%s %s -> %s) - waiting for cashier acceptance", 
+		order.Type, order.ID, order.Amount.String(), order.CurrencyFrom, order.CurrencyTo)
 	
-	for _, match := range matches {
-		matchID, err := e.executeMatch(match)
-		if err != nil {
-			log.Printf("Error executing match: %v", err)
-			continue
-		}
-		matchIDs = append(matchIDs, matchID)
-	}
+	return order.ID, nil
+}
+
+func (e *MatchingEngine) cachePendingOrder(ctx context.Context, order Order) {
+	orderJSON, _ := json.Marshal(order)
 	
-	return matchIDs, nil
+	// Cache pending orders for cashiers to see
+	key := "orders:pending"
+	e.redis.LPush(ctx, key, orderJSON)
+	e.redis.Expire(ctx, key, 24*time.Hour)
+	
+	// Cache by currency pair for faster filtering
+	pairKey := fmt.Sprintf("orders:pending:%s_%s", order.CurrencyFrom, order.CurrencyTo)
+	e.redis.LPush(ctx, pairKey, orderJSON)
+	e.redis.Expire(ctx, pairKey, 24*time.Hour)
 }
 
 func (e *MatchingEngine) cacheOrder(ctx context.Context, order Order) {
 	orderJSON, _ := json.Marshal(order)
 	
-	// Cache by currency pair and type
+	// Cache by currency pair and type for orderbook display
 	key := fmt.Sprintf("orders:%s_%s:%s", order.CurrencyFrom, order.CurrencyTo, order.Type)
 	e.redis.LPush(ctx, key, orderJSON)
 	e.redis.Expire(ctx, key, 24*time.Hour)
@@ -383,28 +392,21 @@ func (e *MatchingEngine) refreshOrderBookCache() {
 	}
 }
 
-func (e *MatchingEngine) matchingLoop() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	
-	for range ticker.C {
-		e.processActiveOrders()
-	}
-}
+// Cashier system methods
 
-func (e *MatchingEngine) processActiveOrders() {
+// GetPendingOrders returns all orders waiting for cashier acceptance
+func (e *MatchingEngine) GetPendingOrders() ([]Order, error) {
 	query := `
 		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
 			rate, min_amount, max_amount, payment_methods, status, created_at
-		FROM p2p_orders 
-		WHERE status = 'ACTIVE' 
+		FROM orders 
+		WHERE status = 'PENDING' AND expires_at > NOW()
 		ORDER BY created_at ASC
 	`
 	
 	rows, err := e.db.Query(query)
 	if err != nil {
-		log.Printf("Error querying active orders: %v", err)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	
@@ -425,13 +427,202 @@ func (e *MatchingEngine) processActiveOrders() {
 		orders = append(orders, order)
 	}
 	
-	// Process matches for each order
-	for _, order := range orders {
-		matches := e.findMatches(order)
-		for _, match := range matches {
-			_, err := e.executeMatch(match)
-			if err != nil {
-				log.Printf("Error executing match: %v", err)
+	return orders, nil
+}
+
+// AcceptOrder allows a cashier to accept a pending order
+func (e *MatchingEngine) AcceptOrder(orderID, cashierID string) error {
+	tx, err := e.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	
+	// Get order details and verify it's pending
+	var order Order
+	err = tx.QueryRow(`
+		SELECT id, user_id, order_type, currency_from, currency_to, amount, 
+			remaining_amount, rate, status
+		FROM orders WHERE id = $1 FOR UPDATE
+	`, orderID).Scan(&order.ID, &order.UserID, &order.Type, &order.CurrencyFrom, 
+		&order.CurrencyTo, &order.Amount, &order.RemainingAmount, &order.Rate, &order.Status)
+	
+	if err != nil {
+		return fmt.Errorf("order not found: %v", err)
+	}
+	
+	if order.Status != "PENDING" {
+		return fmt.Errorf("order is not available for acceptance")
+	}
+	
+	// Verify cashier has sufficient balance for BUY orders
+	if order.Type == "BUY" {
+		var cashierBalance decimal.Decimal
+		err = tx.QueryRow(`
+			SELECT COALESCE(cashier_balance_usd, 0) FROM users WHERE id = $1 AND is_cashier = true
+		`, cashierID).Scan(&cashierBalance)
+		
+		if err != nil {
+			return fmt.Errorf("cashier not found or not verified")
+		}
+		
+		if cashierBalance.LessThan(order.Amount) {
+			return fmt.Errorf("insufficient cashier balance")
+		}
+		
+		// Lock cashier funds
+		_, err = tx.Exec(`
+			UPDATE users SET 
+				cashier_balance_usd = cashier_balance_usd - $1,
+				cashier_locked_usd = cashier_locked_usd + $1
+			WHERE id = $2
+		`, order.Amount, cashierID)
+		
+		if err != nil {
+			return fmt.Errorf("failed to lock cashier funds: %v", err)
+		}
+	}
+	
+	// Update order with cashier assignment
+	_, err = tx.Exec(`
+		UPDATE orders SET 
+			cashier_id = $1,
+			status = 'MATCHED',
+			accepted_at = NOW()
+		WHERE id = $2
+	`, cashierID, orderID)
+	
+	if err != nil {
+		return fmt.Errorf("failed to update order: %v", err)
+	}
+	
+	// Create cashier assignment record
+	_, err = tx.Exec(`
+		INSERT INTO cashier_order_assignments (cashier_id, order_id, status)
+		VALUES ($1, $2, 'ACTIVE')
+	`, cashierID, orderID)
+	
+	if err != nil {
+		return fmt.Errorf("failed to create assignment: %v", err)
+	}
+	
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	
+	// Remove from pending cache and update order cache
+	e.removePendingOrderFromCache(orderID)
+	order.Status = "MATCHED"
+	e.cacheOrder(context.Background(), order)
+	
+	log.Printf("✅ Order accepted by cashier: Order %s accepted by cashier %s", orderID, cashierID)
+	
+	return nil
+}
+
+// ConfirmPayment allows cashier to confirm payment received for an order
+func (e *MatchingEngine) ConfirmPayment(orderID, cashierID string) error {
+	tx, err := e.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	
+	// Verify order ownership by cashier
+	var order Order
+	err = tx.QueryRow(`
+		SELECT id, user_id, order_type, currency_from, currency_to, amount, status
+		FROM orders WHERE id = $1 AND cashier_id = $2 AND status = 'MATCHED' FOR UPDATE
+	`, orderID, cashierID).Scan(&order.ID, &order.UserID, &order.Type, 
+		&order.CurrencyFrom, &order.CurrencyTo, &order.Amount, &order.Status)
+	
+	if err != nil {
+		return fmt.Errorf("order not found or not assigned to this cashier")
+	}
+	
+	// Update order to completed
+	_, err = tx.Exec(`
+		UPDATE orders SET status = 'COMPLETED' WHERE id = $1
+	`, orderID)
+	
+	if err != nil {
+		return fmt.Errorf("failed to complete order: %v", err)
+	}
+	
+	// Release locked funds and transfer to buyer for BUY orders
+	if order.Type == "BUY" {
+		// Release cashier locked funds (they've been paid)
+		_, err = tx.Exec(`
+			UPDATE users SET cashier_locked_usd = cashier_locked_usd - $1 WHERE id = $2
+		`, order.Amount, cashierID)
+		
+		if err != nil {
+			return fmt.Errorf("failed to release cashier funds: %v", err)
+		}
+		
+		// Add USD to buyer's wallet
+		_, err = tx.Exec(`
+			INSERT INTO wallets (user_id, currency, balance) 
+			VALUES ($1, 'USD', $2)
+			ON CONFLICT (user_id, currency) 
+			DO UPDATE SET balance = wallets.balance + $2
+		`, order.UserID, order.Amount)
+		
+		if err != nil {
+			return fmt.Errorf("failed to credit buyer: %v", err)
+		}
+	}
+	
+	// Update assignment status
+	_, err = tx.Exec(`
+		UPDATE cashier_order_assignments 
+		SET status = 'COMPLETED', completed_at = NOW()
+		WHERE cashier_id = $1 AND order_id = $2
+	`, cashierID, orderID)
+	
+	if err != nil {
+		return fmt.Errorf("failed to update assignment: %v", err)
+	}
+	
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	
+	log.Printf("✅ Payment confirmed: Order %s completed by cashier %s", orderID, cashierID)
+	
+	return nil
+}
+
+// removePendingOrderFromCache removes order from pending caches
+func (e *MatchingEngine) removePendingOrderFromCache(orderID string) {
+	ctx := context.Background()
+	
+	// Remove from pending orders cache
+	keys := []string{"orders:pending"}
+	
+	// Also check currency pair specific caches
+	pairs := []string{"USD_BOB", "BOB_USD", "USDT_BOB", "BOB_USDT"}
+	for _, pair := range pairs {
+		keys = append(keys, fmt.Sprintf("orders:pending:%s", pair))
+	}
+	
+	for _, key := range keys {
+		orders, err := e.redis.LRange(ctx, key, 0, -1).Result()
+		if err != nil {
+			continue
+		}
+		
+		for _, orderJSON := range orders {
+			var order Order
+			if err := json.Unmarshal([]byte(orderJSON), &order); err != nil {
+				continue
+			}
+			
+			if order.ID == orderID {
+				e.redis.LRem(ctx, key, 1, orderJSON)
+				break
 			}
 		}
 	}
