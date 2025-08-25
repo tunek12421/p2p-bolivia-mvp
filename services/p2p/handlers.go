@@ -597,12 +597,15 @@ func (s *Server) handleGetOrderDetails(c *gin.Context) {
 		SELECT o.id, o.user_id, o.cashier_id, o.order_type, o.currency_from, o.currency_to, 
 			   o.amount, o.remaining_amount, o.rate, o.min_amount, o.max_amount, 
 			   COALESCE(o.payment_methods, '[]'), o.status, o.accepted_at, o.expires_at, o.created_at,
-			   u.first_name, u.phone
+			   COALESCE(up.first_name, 'Cajero'), u.phone
 		FROM orders o
 		LEFT JOIN users u ON o.cashier_id = u.id
+		LEFT JOIN user_profiles up ON u.id = up.user_id
 		WHERE o.id = $1 AND o.user_id = $2
 	`
 
+	log.Printf("🔍 DEBUG: Getting order details for orderID: %s, userID: %s", orderID, userID)
+	
 	err := s.db.QueryRow(query, orderID, userID).Scan(
 		&order.ID, &order.UserID, &cashierID, &order.Type, &order.CurrencyFrom,
 		&order.CurrencyTo, &order.Amount, &order.RemainingAmount, &order.Rate,
@@ -612,9 +615,12 @@ func (s *Server) handleGetOrderDetails(c *gin.Context) {
 	)
 
 	if err != nil {
+		log.Printf("❌ DEBUG: Query error: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 		return
 	}
+	
+	log.Printf("✅ DEBUG: Order found: %s, status: %s", order.ID, order.Status)
 
 	// Parse payment methods
 	json.Unmarshal([]byte(paymentMethodsJSON), &order.PaymentMethods)

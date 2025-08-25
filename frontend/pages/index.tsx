@@ -76,7 +76,8 @@ export default function HomePage() {
     }
   }
 
-  const formatCurrency = (amount: number, currency: string) => {
+  const formatCurrency = (amount: number | string, currency: string) => {
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
     // Map crypto currencies to valid ISO codes for formatting
     const currencyMapping: { [key: string]: string } = {
       'BOB': 'USD', // Format as USD but replace symbol
@@ -91,7 +92,7 @@ export default function HomePage() {
       currency: formatCurrencyCode,
       minimumFractionDigits: currency === 'BOB' ? 2 : 4,
       maximumFractionDigits: currency === 'BOB' ? 2 : 4,
-    }).format(amount)
+    }).format(numAmount)
     
     // Replace the dollar symbol with appropriate currency symbol
     if (currency === 'BOB') {

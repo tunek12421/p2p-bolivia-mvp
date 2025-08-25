@@ -116,7 +116,7 @@ export default function CreateOrderPage() {
     // Check wallet balance for SELL orders
     if (formData.type === 'SELL') {
       const wallet = wallets.find(w => w.currency === formData.currency_from)
-      const availableBalance = wallet ? wallet.balance - wallet.locked_balance : 0
+      const availableBalance = wallet ? (typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : wallet.balance) - (typeof wallet.locked_balance === 'string' ? parseFloat(wallet.locked_balance) : wallet.locked_balance) : 0
       
       if (availableBalance < parseFloat(formData.amount)) {
         toast.error(`Saldo insuficiente. Disponible: ${availableBalance} ${formData.currency_from}`)
@@ -187,7 +187,8 @@ export default function CreateOrderPage() {
     }
   }
 
-  const formatCurrency = (amount: number, currency: string) => {
+  const formatCurrency = (amount: number | string, currency: string) => {
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
     const currencyMapping: { [key: string]: string } = {
       'BOB': 'USD',
       'USDT': 'USD',
@@ -201,7 +202,7 @@ export default function CreateOrderPage() {
       currency: formatCurrencyCode,
       minimumFractionDigits: currency === 'BOB' ? 2 : 4,
       maximumFractionDigits: currency === 'BOB' ? 2 : 4,
-    }).format(amount)
+    }).format(numAmount)
     
     if (currency === 'BOB') {
       formatted = formatted.replace('$', 'Bs. ')
@@ -222,7 +223,7 @@ export default function CreateOrderPage() {
 
   const getWalletBalance = (currency: string) => {
     const wallet = wallets.find(w => w.currency === currency)
-    return wallet ? wallet.balance - wallet.locked_balance : 0
+    return wallet ? (typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : wallet.balance) - (typeof wallet.locked_balance === 'string' ? parseFloat(wallet.locked_balance) : wallet.locked_balance) : 0
   }
 
   if (isLoadingWallets) {

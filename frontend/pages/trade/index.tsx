@@ -73,7 +73,8 @@ export default function TradePage() {
     }
   }
 
-  const formatCurrency = (amount: number, currency: string) => {
+  const formatCurrency = (amount: number | string, currency: string) => {
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
     const currencyMapping: { [key: string]: string } = {
       'BOB': 'USD',
       'USDT': 'USD',
@@ -87,7 +88,7 @@ export default function TradePage() {
       currency: formatCurrencyCode,
       minimumFractionDigits: currency === 'BOB' ? 2 : 4,
       maximumFractionDigits: currency === 'BOB' ? 2 : 4,
-    }).format(amount)
+    }).format(numAmount)
     
     if (currency === 'BOB') {
       formatted = formatted.replace('$', 'Bs. ')

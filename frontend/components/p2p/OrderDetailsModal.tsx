@@ -122,15 +122,16 @@ export default function OrderDetailsModal({
     }
   }
 
-  const formatCurrency = (amount: number, currency: string) => {
+  const formatCurrency = (amount: number | string, currency: string) => {
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
     if (currency === 'BOB') {
-      return `Bs. ${amount.toFixed(2)}`
+      return `Bs. ${numAmount.toFixed(2)}`
     } else if (currency === 'USD') {
-      return `$${amount.toFixed(2)}`
+      return `$${numAmount.toFixed(2)}`
     } else if (currency === 'USDT') {
-      return `${amount.toFixed(2)} USDT`
+      return `${numAmount.toFixed(2)} USDT`
     }
-    return `${amount} ${currency}`
+    return `${numAmount} ${currency}`
   }
 
   return (

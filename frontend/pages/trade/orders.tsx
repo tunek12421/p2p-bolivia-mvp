@@ -102,14 +102,15 @@ export default function UserOrdersPage() {
     )
   }
 
-  const formatCurrency = (amount: number, currency: string) => {
+  const formatCurrency = (amount: number | string, currency: string) => {
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
     if (currency === 'BOB') {
-      return `Bs. ${amount.toFixed(2)}`
+      return `Bs. ${numAmount.toFixed(2)}`
     }
     if (currency === 'USDT') {
-      return `${amount.toFixed(4)} USDT`
+      return `${numAmount.toFixed(4)} USDT`
     }
-    return `$${amount.toFixed(4)}`
+    return `$${numAmount.toFixed(4)}`
   }
 
   const canCancelOrder = (order: Order) => {
@@ -278,7 +279,7 @@ export default function UserOrdersPage() {
                         {formatCurrency(order.amount, order.currency_from)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {order.rate}
+                        {typeof order.rate === 'string' ? parseFloat(order.rate).toFixed(2) : order.rate.toFixed(2)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {getStatusBadge(order.status)}

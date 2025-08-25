@@ -69,7 +69,8 @@ export default function DashboardPage() {
     }
   }
 
-  const formatCurrency = (amount: number, currency: string) => {
+  const formatCurrency = (amount: number | string, currency: string) => {
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
     // Map crypto currencies to valid ISO codes for formatting
     const currencyMapping: { [key: string]: string } = {
       'BOB': 'USD', // Format as USD but replace symbol
@@ -84,7 +85,7 @@ export default function DashboardPage() {
       currency: formatCurrencyCode,
       minimumFractionDigits: currency === 'BOB' ? 2 : 4,
       maximumFractionDigits: currency === 'BOB' ? 2 : 4,
-    }).format(amount)
+    }).format(numAmount)
     
     // Replace the dollar symbol with appropriate currency symbol
     if (currency === 'BOB') {
@@ -255,7 +256,7 @@ export default function DashboardPage() {
                         <p className="font-semibold text-gray-900">
                           {formatCurrency(wallet.balance, wallet.currency)}
                         </p>
-                        {wallet.locked_balance > 0 && (
+                        {(typeof wallet.locked_balance === 'string' ? parseFloat(wallet.locked_balance) : wallet.locked_balance) > 0 && (
                           <p className="text-sm text-orange-600">
                             {formatCurrency(wallet.locked_balance, wallet.currency)} bloqueado
                           </p>

@@ -83,7 +83,8 @@ export default function CashierDashboard() {
     }
   }
 
-  const formatCurrency = (amount: number, currency: string) => {
+  const formatCurrency = (amount: number | string, currency: string) => {
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
     const currencyMapping: { [key: string]: string } = {
       'BOB': 'USD',
       'USDT': 'USD',
@@ -97,7 +98,7 @@ export default function CashierDashboard() {
       currency: formatCurrencyCode,
       minimumFractionDigits: currency === 'BOB' ? 2 : 4,
       maximumFractionDigits: currency === 'BOB' ? 2 : 4,
-    }).format(amount)
+    }).format(numAmount)
     
     if (currency === 'BOB') {
       formatted = formatted.replace('$', 'Bs. ')
@@ -279,7 +280,7 @@ export default function CashierDashboard() {
                         <div>
                           <p className="text-gray-500">Total</p>
                           <p className="font-semibold">
-                            {formatCurrency(order.amount * order.rate, order.currency_to)}
+                            {formatCurrency((typeof order.amount === 'string' ? parseFloat(order.amount) : order.amount) * (typeof order.rate === 'string' ? parseFloat(order.rate) : order.rate), order.currency_to)}
                           </p>
                         </div>
                         <div>
@@ -353,7 +354,7 @@ export default function CashierDashboard() {
                         <div>
                           <p className="text-gray-500">Total BOB</p>
                           <p className="font-semibold">
-                            Bs. {((order.amount || 0) * (order.rate || 0) * 6.9).toFixed(2)}
+                            Bs. {((typeof order.amount === 'string' ? parseFloat(order.amount) || 0 : order.amount || 0) * (typeof order.rate === 'string' ? parseFloat(order.rate) || 0 : order.rate || 0) * 6.9).toFixed(2)}
                           </p>
                         </div>
                         <div>

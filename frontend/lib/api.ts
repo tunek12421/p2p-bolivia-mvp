@@ -221,11 +221,11 @@ export interface Order {
   type: 'BUY' | 'SELL'
   currency_from: string
   currency_to: string
-  amount: number
-  remaining_amount: number
-  rate: number
-  min_amount: number
-  max_amount: number
+  amount: number | string
+  remaining_amount: number | string
+  rate: number | string
+  min_amount: number | string
+  max_amount: number | string
   payment_methods: string[]
   status: 'PENDING' | 'MATCHED' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED' | 'ACTIVE' | 'FILLED' | 'PARTIAL'
   created_at: string
@@ -262,8 +262,8 @@ export interface OrderBook {
 
 export interface WalletBalance {
   currency: string
-  balance: number
-  locked_balance: number
+  balance: number | string
+  locked_balance: number | string
   last_updated: string
 }
 
@@ -272,7 +272,7 @@ export interface Transaction {
   user_id: string
   type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'FEE'
   currency: string
-  amount: number
+  amount: number | string
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
   method: 'BANK' | 'PAYPAL' | 'STRIPE' | 'QR' | 'P2P'
   external_ref?: string

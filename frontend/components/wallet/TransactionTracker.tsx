@@ -178,7 +178,7 @@ export default function TransactionTracker({
         <div className="flex justify-between">
           <span className="text-gray-600">Monto:</span>
           <span className="font-medium">
-            {getCurrencySymbol(transaction.currency)}{transaction.amount} {transaction.currency}
+            {getCurrencySymbol(transaction.currency)}{typeof transaction.amount === 'string' ? parseFloat(transaction.amount) : transaction.amount} {transaction.currency}
           </span>
         </div>
 

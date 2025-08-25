@@ -63,7 +63,9 @@ CREATE TABLE p2p_orders (
     min_amount DECIMAL(20,8),
     max_amount DECIMAL(20,8),
     payment_methods TEXT[],
-    status VARCHAR(20) DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PARTIALLY_FILLED', 'FILLED', 'CANCELLED', 'EXPIRED')),
+    status VARCHAR(20) DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PARTIALLY_FILLED', 'FILLED', 'CANCELLED', 'EXPIRED', 'PENDING', 'MATCHED', 'PROCESSING', 'COMPLETED')),
+    cashier_id UUID REFERENCES users(id),
+    accepted_at TIMESTAMP WITH TIME ZONE,
     expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -191,13 +193,25 @@ CREATE TABLE audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Cashier order assignments table for tracking cashier assignments
+CREATE TABLE cashier_order_assignments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    cashier_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'ASSIGNED',
+    completed_at TIMESTAMP WITH TIME ZONE,
+    UNIQUE(order_id, cashier_id)
+);
+
 -- Indexes for performance
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_phone ON users(phone);
 CREATE INDEX idx_wallets_user_id ON wallets(user_id);
-CREATE INDEX idx_orders_user_id ON p2p_orders(user_id);
-CREATE INDEX idx_orders_status ON p2p_orders(status);
-CREATE INDEX idx_orders_currencies ON p2p_orders(currency_from, currency_to);
+CREATE INDEX idx_p2p_orders_user_id ON p2p_orders(user_id);
+CREATE INDEX idx_p2p_orders_status ON p2p_orders(status);
+CREATE INDEX idx_p2p_orders_currencies ON p2p_orders(currency_from, currency_to);
+CREATE INDEX idx_p2p_orders_cashier_id ON p2p_orders(cashier_id);
 CREATE INDEX idx_transactions_users ON transactions(from_user_id, to_user_id);
 CREATE INDEX idx_transactions_user_id ON transactions(user_id);
 CREATE INDEX idx_transactions_status ON transactions(status);
@@ -209,6 +223,8 @@ CREATE INDEX idx_deposit_accounts_currency ON deposit_accounts(currency);
 CREATE INDEX idx_bank_notifications_transaction ON bank_notifications(transaction_id);
 CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
 CREATE INDEX idx_audit_logs_user ON audit_logs(user_id);
+CREATE INDEX idx_cashier_assignments_order ON cashier_order_assignments(order_id);
+CREATE INDEX idx_cashier_assignments_cashier ON cashier_order_assignments(cashier_id);
 
 -- Updated at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at()
@@ -242,15 +258,6 @@ CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 
--- Create cashier_order_assignments table for tracking cashier assignments
-CREATE TABLE IF NOT EXISTS cashier_order_assignments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    cashier_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    status VARCHAR(20) DEFAULT 'ASSIGNED' CHECK (status IN ('ASSIGNED', 'ACCEPTED', 'COMPLETED', 'CANCELLED')),
-    UNIQUE(order_id, cashier_id)
-);
 
 -- Create sample users for testing (password is 'password123')
 INSERT INTO users (id, email, phone, password_hash, is_verified, is_active, is_cashier) VALUES 

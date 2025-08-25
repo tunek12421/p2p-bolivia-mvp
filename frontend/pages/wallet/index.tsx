@@ -61,7 +61,8 @@ export default function WalletPage() {
     }
   }
 
-  const formatCurrency = (amount: number, currency: string) => {
+  const formatCurrency = (amount: number | string, currency: string) => {
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
     const currencyMapping: { [key: string]: string } = {
       'BOB': 'USD',
       'USDT': 'USD',
@@ -75,7 +76,7 @@ export default function WalletPage() {
       currency: formatCurrencyCode,
       minimumFractionDigits: currency === 'BOB' ? 2 : 4,
       maximumFractionDigits: currency === 'BOB' ? 2 : 4,
-    }).format(amount)
+    }).format(numAmount)
     
     if (currency === 'BOB') {
       formatted = formatted.replace('$', 'Bs. ')
@@ -136,9 +137,9 @@ export default function WalletPage() {
   const getTotalBalance = () => {
     return wallets.reduce((total, wallet) => {
       // Convertir todo a USD para el cálculo total (simplificado)
-      let balanceInUSD = wallet.balance
+      let balanceInUSD = typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : wallet.balance
       if (wallet.currency === 'BOB') {
-        balanceInUSD = wallet.balance / 6.9 // Aproximación BOB a USD
+        balanceInUSD = (typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : wallet.balance) / 6.9 // Aproximación BOB a USD
       }
       return total + balanceInUSD
     }, 0)
@@ -158,7 +159,7 @@ export default function WalletPage() {
   }
 
   const handleWithdrawClick = (wallet: WalletBalance) => {
-    if (wallet.balance - wallet.locked_balance <= 0) {
+    if ((typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : wallet.balance) - (typeof wallet.locked_balance === 'string' ? parseFloat(wallet.locked_balance) : wallet.locked_balance) <= 0) {
       toast.error('No tienes fondos disponibles para retirar')
       return
     }
@@ -276,11 +277,11 @@ export default function WalletPage() {
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-600">Disponible:</span>
                       <span className="font-semibold text-gray-900">
-                        {formatCurrency(wallet.balance - wallet.locked_balance, wallet.currency)}
+                        {formatCurrency((typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : wallet.balance) - (typeof wallet.locked_balance === 'string' ? parseFloat(wallet.locked_balance) : wallet.locked_balance), wallet.currency)}
                       </span>
                     </div>
                     
-                    {wallet.locked_balance > 0 && (
+                    {(typeof wallet.locked_balance === 'string' ? parseFloat(wallet.locked_balance) : wallet.locked_balance) > 0 && (
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Bloqueado:</span>
                         <span className="font-semibold text-orange-600">
@@ -315,7 +316,7 @@ export default function WalletPage() {
                           ? 'btn-secondary'
                           : 'btn-secondary opacity-50 cursor-not-allowed'
                       }`}
-                      disabled={!isPaymentAvailable(wallet.currency, 'withdrawal') || wallet.balance - wallet.locked_balance <= 0}
+                      disabled={!isPaymentAvailable(wallet.currency, 'withdrawal') || (typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : wallet.balance) - (typeof wallet.locked_balance === 'string' ? parseFloat(wallet.locked_balance) : wallet.locked_balance) <= 0}
                       title={getPaymentMethodText(wallet.currency, 'withdrawal')}
                     >
                       <ArrowUpIcon className="w-4 h-4 mr-1" />
@@ -379,7 +380,7 @@ export default function WalletPage() {
                         : 'text-gray-900'
                     }`}>
                       {transaction.type === 'DEPOSIT' || transaction.type === 'TRANSFER_IN' ? '+' : '-'}
-                      {formatCurrency(Math.abs(transaction.amount), transaction.currency)}
+                      {formatCurrency(Math.abs(typeof transaction.amount === 'string' ? parseFloat(transaction.amount) : transaction.amount), transaction.currency)}
                     </p>
                     {getStatusBadge(transaction.status)}
                   </div>
@@ -412,7 +413,7 @@ export default function WalletPage() {
           <div 
             className="card hover:shadow-md transition-shadow cursor-pointer"
             onClick={() => {
-              const availableWallet = wallets.find(w => (w.currency === 'BOB' || w.currency === 'USD') && w.balance - w.locked_balance > 0)
+              const availableWallet = wallets.find(w => (w.currency === 'BOB' || w.currency === 'USD') && ((typeof w.balance === 'string' ? parseFloat(w.balance) : w.balance) - (typeof w.locked_balance === 'string' ? parseFloat(w.locked_balance) : w.locked_balance)) > 0)
               if (availableWallet) {
                 handleWithdrawClick(availableWallet)
               } else {
@@ -454,7 +455,7 @@ export default function WalletPage() {
             currency={selectedWallet.currency}
             type={modalType}
             onSuccess={handleModalSuccess}
-            availableBalance={selectedWallet.balance - selectedWallet.locked_balance}
+            availableBalance={(typeof selectedWallet.balance === 'string' ? parseFloat(selectedWallet.balance) : selectedWallet.balance) - (typeof selectedWallet.locked_balance === 'string' ? parseFloat(selectedWallet.locked_balance) : selectedWallet.locked_balance)}
           />
           
           <QRModal
