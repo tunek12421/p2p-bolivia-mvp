@@ -1,38 +1,86 @@
 -- migrations/006_cashier_system.sql
 -- Add cashier system to support AIRTM-like flow where cashiers accept orders
 
--- Add user roles and cashier fields
-ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'cashier', 'admin'));
-ALTER TABLE users ADD COLUMN is_cashier BOOLEAN DEFAULT FALSE;
-ALTER TABLE users ADD COLUMN cashier_verified_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE users ADD COLUMN cashier_balance_usd DECIMAL(20,8) DEFAULT 0 CHECK (cashier_balance_usd >= 0);
-ALTER TABLE users ADD COLUMN cashier_balance_bob DECIMAL(20,8) DEFAULT 0 CHECK (cashier_balance_bob >= 0);
-ALTER TABLE users ADD COLUMN cashier_locked_usd DECIMAL(20,8) DEFAULT 0 CHECK (cashier_locked_usd >= 0);
-ALTER TABLE users ADD COLUMN cashier_locked_bob DECIMAL(20,8) DEFAULT 0 CHECK (cashier_locked_bob >= 0);
+-- Add user roles and cashier fields (safe)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'role') THEN
+        ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'cashier', 'admin'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'is_cashier') THEN
+        ALTER TABLE users ADD COLUMN is_cashier BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cashier_verified_at') THEN
+        ALTER TABLE users ADD COLUMN cashier_verified_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cashier_balance_usd') THEN
+        ALTER TABLE users ADD COLUMN cashier_balance_usd DECIMAL(20,8) DEFAULT 0 CHECK (cashier_balance_usd >= 0);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cashier_balance_bob') THEN
+        ALTER TABLE users ADD COLUMN cashier_balance_bob DECIMAL(20,8) DEFAULT 0 CHECK (cashier_balance_bob >= 0);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cashier_locked_usd') THEN
+        ALTER TABLE users ADD COLUMN cashier_locked_usd DECIMAL(20,8) DEFAULT 0 CHECK (cashier_locked_usd >= 0);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cashier_locked_bob') THEN
+        ALTER TABLE users ADD COLUMN cashier_locked_bob DECIMAL(20,8) DEFAULT 0 CHECK (cashier_locked_bob >= 0);
+    END IF;
+END $$;
 
--- Add cashier_id to orders table
-ALTER TABLE orders ADD COLUMN cashier_id UUID REFERENCES users(id);
-ALTER TABLE orders ADD COLUMN min_amount DECIMAL(20,8);
-ALTER TABLE orders ADD COLUMN max_amount DECIMAL(20,8);
-ALTER TABLE orders ADD COLUMN payment_methods TEXT[];
-ALTER TABLE orders ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE orders ADD COLUMN expires_at TIMESTAMP WITH TIME ZONE;
+-- Add cashier_id to orders table (safe)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'cashier_id') THEN
+        ALTER TABLE orders ADD COLUMN cashier_id UUID REFERENCES users(id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'min_amount') THEN
+        ALTER TABLE orders ADD COLUMN min_amount DECIMAL(20,8);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'max_amount') THEN
+        ALTER TABLE orders ADD COLUMN max_amount DECIMAL(20,8);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'payment_methods') THEN
+        ALTER TABLE orders ADD COLUMN payment_methods TEXT[];
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'accepted_at') THEN
+        ALTER TABLE orders ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'expires_at') THEN
+        ALTER TABLE orders ADD COLUMN expires_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+END $$;
 
--- Also add cashier_id to p2p_orders for consistency
-ALTER TABLE p2p_orders ADD COLUMN cashier_id UUID REFERENCES users(id);
-ALTER TABLE p2p_orders ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE;
+-- Also add cashier_id to p2p_orders for consistency (safe)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'p2p_orders' AND column_name = 'cashier_id') THEN
+        ALTER TABLE p2p_orders ADD COLUMN cashier_id UUID REFERENCES users(id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'p2p_orders' AND column_name = 'accepted_at') THEN
+        ALTER TABLE p2p_orders ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+END $$;
 
 -- Update order status constraints to include new cashier flow statuses
-ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
-ALTER TABLE orders ADD CONSTRAINT orders_status_check 
-    CHECK (status IN ('PENDING', 'MATCHED', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'EXPIRED'));
-
-ALTER TABLE p2p_orders DROP CONSTRAINT IF EXISTS p2p_orders_status_check;
-ALTER TABLE p2p_orders ADD CONSTRAINT p2p_orders_status_check 
-    CHECK (status IN ('PENDING', 'MATCHED', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'EXPIRED'));
+DO $$
+BEGIN
+    -- Only update constraints if they don't already exist
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'orders_status_check') THEN
+        ALTER TABLE orders ADD CONSTRAINT orders_status_check 
+            CHECK (status IN ('PENDING', 'MATCHED', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'EXPIRED'));
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'p2p_orders_status_check') THEN
+        -- First check if there are any existing records that would violate the constraint
+        IF NOT EXISTS (SELECT 1 FROM p2p_orders WHERE status NOT IN ('PENDING', 'MATCHED', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'EXPIRED')) THEN
+            ALTER TABLE p2p_orders ADD CONSTRAINT p2p_orders_status_check 
+                CHECK (status IN ('PENDING', 'MATCHED', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'EXPIRED'));
+        END IF;
+    END IF;
+END $$;
 
 -- Create cashier applications table for verification process
-CREATE TABLE cashier_applications (
+CREATE TABLE IF NOT EXISTS cashier_applications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     business_name VARCHAR(255),
@@ -49,7 +97,7 @@ CREATE TABLE cashier_applications (
 );
 
 -- Create cashier order tracking for availability
-CREATE TABLE cashier_order_assignments (
+CREATE TABLE IF NOT EXISTS cashier_order_assignments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     cashier_id UUID NOT NULL REFERENCES users(id),
     order_id UUID NOT NULL REFERENCES orders(id),
@@ -60,7 +108,7 @@ CREATE TABLE cashier_order_assignments (
 );
 
 -- Create cashier performance metrics
-CREATE TABLE cashier_metrics (
+CREATE TABLE IF NOT EXISTS cashier_metrics (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     cashier_id UUID NOT NULL REFERENCES users(id),
     date DATE NOT NULL,
@@ -76,23 +124,30 @@ CREATE TABLE cashier_metrics (
 );
 
 -- Add indexes for cashier system
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_users_is_cashier ON users(is_cashier) WHERE is_cashier = TRUE;
-CREATE INDEX idx_orders_cashier_id ON orders(cashier_id);
-CREATE INDEX idx_orders_status_created ON orders(status, created_at);
-CREATE INDEX idx_p2p_orders_cashier_id ON p2p_orders(cashier_id);
-CREATE INDEX idx_cashier_applications_user ON cashier_applications(user_id);
-CREATE INDEX idx_cashier_applications_status ON cashier_applications(status);
-CREATE INDEX idx_cashier_assignments_cashier ON cashier_order_assignments(cashier_id);
-CREATE INDEX idx_cashier_assignments_order ON cashier_order_assignments(order_id);
-CREATE INDEX idx_cashier_metrics_cashier_date ON cashier_metrics(cashier_id, date);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_is_cashier ON users(is_cashier) WHERE is_cashier = TRUE;
+CREATE INDEX IF NOT EXISTS idx_orders_cashier_id ON orders(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_p2p_orders_cashier_id ON p2p_orders(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_cashier_applications_user ON cashier_applications(user_id);
+CREATE INDEX IF NOT EXISTS idx_cashier_applications_status ON cashier_applications(status);
+CREATE INDEX IF NOT EXISTS idx_cashier_assignments_cashier ON cashier_order_assignments(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_cashier_assignments_order ON cashier_order_assignments(order_id);
+CREATE INDEX IF NOT EXISTS idx_cashier_metrics_cashier_date ON cashier_metrics(cashier_id, date);
 
 -- Add trigger for updated_at on new tables
-CREATE TRIGGER update_cashier_applications_updated_at BEFORE UPDATE ON cashier_applications
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER update_cashier_metrics_updated_at BEFORE UPDATE ON cashier_metrics
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_cashier_applications_updated_at') THEN
+        CREATE TRIGGER update_cashier_applications_updated_at BEFORE UPDATE ON cashier_applications
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_cashier_metrics_updated_at') THEN
+        CREATE TRIGGER update_cashier_metrics_updated_at BEFORE UPDATE ON cashier_metrics
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+    END IF;
+END $$;
 
 -- Update comments
 COMMENT ON COLUMN users.role IS 'User role: user (regular), cashier, admin';

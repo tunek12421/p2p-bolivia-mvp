@@ -193,23 +193,23 @@ BEGIN
 END $$;
 
 -- Insert sample mediator users
-INSERT INTO users (id, email, password_hash, first_name, last_name, is_mediator, kyc_level, created_at)
+INSERT INTO users (id, email, password_hash, is_mediator, kyc_level, created_at)
 VALUES 
-    ('11111111-1111-1111-1111-111111111111', 'mediator1@p2pbolivia.com', '$2a$10$example_hash', 'Mediador', 'Principal', true, 3, NOW()),
-    ('22222222-2222-2222-2222-222222222222', 'mediator2@p2pbolivia.com', '$2a$10$example_hash', 'Mediador', 'Secundario', true, 3, NOW())
-ON CONFLICT (email) DO NOTHING;
+    ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'mediator1@p2pbolivia.com', '$2a$10$5dxor6U7gSJ41QCXSnj5IOYgtmIHvzbk54oWz1glGnxeNeqj6.ggS', true, 3, NOW()),
+    ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'mediator2@p2pbolivia.com', '$2a$10$5dxor6U7gSJ41QCXSnj5IOYgtmIHvzbk54oWz1glGnxeNeqj6.ggS', true, 3, NOW())
+ON CONFLICT (id) DO NOTHING;
 
 -- Create materialized view for analytics (refresh daily)
 CREATE MATERIALIZED VIEW IF NOT EXISTS daily_stats AS
 SELECT 
     date_trunc('day', created_at) as date,
-    COUNT(DISTINCT CASE WHEN 'users' = 'users' THEN id END) as new_users,
-    COUNT(DISTINCT CASE WHEN 'transactions' = 'transactions' THEN id END) as new_transactions,
-    COALESCE(SUM(CASE WHEN 'transactions' = 'transactions' THEN amount END), 0) as total_volume
+    COUNT(DISTINCT CASE WHEN table_type = 'users' THEN id END) as new_users,
+    COUNT(DISTINCT CASE WHEN table_type = 'transactions' THEN id END) as new_transactions,
+    COALESCE(SUM(CASE WHEN table_type = 'transactions' THEN amount END), 0) as total_volume
 FROM (
-    SELECT id, created_at FROM users WHERE created_at > NOW() - INTERVAL '90 days'
+    SELECT id, created_at, 'users' as table_type, 0 as amount FROM users WHERE created_at > NOW() - INTERVAL '90 days'
     UNION ALL
-    SELECT id, created_at FROM transactions WHERE created_at > NOW() - INTERVAL '90 days'
+    SELECT id, created_at, 'transactions' as table_type, COALESCE(amount, 0) as amount FROM transactions WHERE created_at > NOW() - INTERVAL '90 days'
 ) combined
 GROUP BY date_trunc('day', created_at)
 ORDER BY date DESC;

@@ -416,3 +416,55 @@ export interface UserProfile {
   created_at: string
   updated_at: string
 }
+
+// Chat API
+export const chatAPI = {
+  // Get chat rooms
+  getRooms: (params?: {
+    transaction_id?: string
+    dispute_id?: string
+  }) => api.get('/api/v1/rooms', { params }),
+  
+  // Create a chat room
+  createRoom: (data: {
+    room_type: 'TRANSACTION' | 'DISPUTE' | 'DIRECT'
+    transaction_id?: string
+    dispute_id?: string
+    participants: string[]
+  }) => api.post('/api/v1/rooms', data),
+  
+  // Get messages for a room
+  getRoomMessages: (roomId: string, params?: {
+    limit?: number
+    offset?: number
+  }) => api.get(`/api/v1/rooms/${roomId}/messages`, { params }),
+  
+  // Send a message
+  sendMessage: (roomId: string, data: {
+    content: string
+    message_type: 'text' | 'image' | 'file'
+  }) => api.post(`/api/v1/rooms/${roomId}/messages`, data),
+  
+  // Join a room
+  joinRoom: (roomId: string) => api.post(`/api/v1/rooms/${roomId}/join`),
+}
+
+// Chat Types
+export interface ChatRoom {
+  id: string
+  room_type: 'TRANSACTION' | 'DISPUTE' | 'DIRECT'
+  transaction_id?: string
+  dispute_id?: string
+  participants: string[]
+  last_message_at: string
+  created_at: string
+}
+
+export interface ChatMessage {
+  id: string
+  room_id: string
+  sender_id: string
+  message_type: string
+  content: string
+  created_at: string
+}

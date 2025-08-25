@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS deposit_accounts (
 );
 
 -- Insert sample deposit accounts for testing
-INSERT INTO deposit_accounts (currency, bank_name, account_number, account_holder) VALUES
+INSERT INTO deposit_accounts (currency, bank, account_number, account_holder) VALUES
 ('BOB', 'Banco de Crédito de Bolivia', '1234567890', 'P2P Bolivia SRL'),
 ('USD', 'Banco Nacional de Bolivia', '0987654321', 'P2P Bolivia SRL'),
 ('BOB', 'Banco Mercantil Santa Cruz', '1122334455', 'P2P Bolivia SRL')

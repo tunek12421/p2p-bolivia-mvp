@@ -3,8 +3,8 @@
 -- Insert test users
 INSERT INTO users (id, email, phone, password_hash, is_verified, kyc_level)
 VALUES 
-    ('11111111-1111-1111-1111-111111111111', 'user1@test.com', '70000001', '$2a$10$YourHashedPasswordHere', true, 2),
-    ('22222222-2222-2222-2222-222222222222', 'user2@test.com', '70000002', '$2a$10$YourHashedPasswordHere', true, 1);
+    ('11111111-1111-1111-1111-111111111111', 'user1@test.com', '70000001', '$2a$10$5dxor6U7gSJ41QCXSnj5IOYgtmIHvzbk54oWz1glGnxeNeqj6.ggS', true, 2),
+    ('22222222-2222-2222-2222-222222222222', 'user2@test.com', '70000002', '$2a$10$5dxor6U7gSJ41QCXSnj5IOYgtmIHvzbk54oWz1glGnxeNeqj6.ggS', true, 1);
 
 -- Insert user profiles
 INSERT INTO user_profiles (user_id, first_name, last_name, city)

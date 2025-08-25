@@ -1,22 +1,53 @@
 -- migrations/005_cashier_system.sql
 -- Add cashier system with user roles and order modifications
 
--- Add user role system
-ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'cashier', 'admin'));
-ALTER TABLE users ADD COLUMN is_cashier BOOLEAN DEFAULT FALSE;
-ALTER TABLE users ADD COLUMN cashier_verified_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE users ADD COLUMN cashier_balance_limit DECIMAL(20,8) DEFAULT 10000; -- Max balance limit for cashiers
-ALTER TABLE users ADD COLUMN cashier_rating DECIMAL(3,2) DEFAULT 5.0 CHECK (cashier_rating >= 0 AND cashier_rating <= 5);
-ALTER TABLE users ADD COLUMN cashier_completed_orders INTEGER DEFAULT 0;
+-- Add user role system (safe)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'role') THEN
+        ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'cashier', 'admin'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'is_cashier') THEN
+        ALTER TABLE users ADD COLUMN is_cashier BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cashier_verified_at') THEN
+        ALTER TABLE users ADD COLUMN cashier_verified_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cashier_balance_limit') THEN
+        ALTER TABLE users ADD COLUMN cashier_balance_limit DECIMAL(20,8) DEFAULT 10000;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cashier_rating') THEN
+        ALTER TABLE users ADD COLUMN cashier_rating DECIMAL(3,2) DEFAULT 5.0 CHECK (cashier_rating >= 0 AND cashier_rating <= 5);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'cashier_completed_orders') THEN
+        ALTER TABLE users ADD COLUMN cashier_completed_orders INTEGER DEFAULT 0;
+    END IF;
+END $$;
 
--- Add cashier_id field to orders tables
-ALTER TABLE orders ADD COLUMN cashier_id UUID REFERENCES users(id);
-ALTER TABLE orders ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE;
-ALTER TABLE orders ADD COLUMN expired_at TIMESTAMP WITH TIME ZONE;
+-- Add cashier_id field to orders tables (safe)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'cashier_id') THEN
+        ALTER TABLE orders ADD COLUMN cashier_id UUID REFERENCES users(id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'accepted_at') THEN
+        ALTER TABLE orders ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'expired_at') THEN
+        ALTER TABLE orders ADD COLUMN expired_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+END $$;
 
--- Also update p2p_orders table for consistency
-ALTER TABLE p2p_orders ADD COLUMN cashier_id UUID REFERENCES users(id);
-ALTER TABLE p2p_orders ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE;
+-- Also update p2p_orders table for consistency (safe)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'p2p_orders' AND column_name = 'cashier_id') THEN
+        ALTER TABLE p2p_orders ADD COLUMN cashier_id UUID REFERENCES users(id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'p2p_orders' AND column_name = 'accepted_at') THEN
+        ALTER TABLE p2p_orders ADD COLUMN accepted_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+END $$;
 
 -- Update order statuses to support the new flow
 -- Current: ACTIVE, PARTIALLY_FILLED, FILLED, CANCELLED, EXPIRED
@@ -39,7 +70,7 @@ CREATE TABLE matches (
 );
 
 -- Cashier availability table
-CREATE TABLE cashier_availability (
+CREATE TABLE IF NOT EXISTS cashier_availability (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     cashier_id UUID NOT NULL REFERENCES users(id),
     currency_from VARCHAR(10) NOT NULL,
@@ -55,7 +86,7 @@ CREATE TABLE cashier_availability (
 );
 
 -- Order notifications for cashiers
-CREATE TABLE order_notifications (
+CREATE TABLE IF NOT EXISTS order_notifications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     order_id UUID NOT NULL REFERENCES orders(id),
     cashier_id UUID REFERENCES users(id),
@@ -65,27 +96,32 @@ CREATE TABLE order_notifications (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Update existing indexes
-CREATE INDEX idx_orders_cashier_id ON orders(cashier_id);
-CREATE INDEX idx_orders_status ON orders(status);
-CREATE INDEX idx_p2p_orders_cashier_id ON p2p_orders(cashier_id);
-CREATE INDEX idx_matches_cashier_id ON matches(cashier_id);
-CREATE INDEX idx_matches_status ON matches(status);
-CREATE INDEX idx_cashier_availability_cashier ON cashier_availability(cashier_id);
-CREATE INDEX idx_cashier_availability_active ON cashier_availability(is_active);
-CREATE INDEX idx_order_notifications_cashier ON order_notifications(cashier_id, is_read);
+-- Update existing indexes (safe)
+CREATE INDEX IF NOT EXISTS idx_orders_cashier_id ON orders(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_p2p_orders_cashier_id ON p2p_orders(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_matches_cashier_id ON matches(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status);
+CREATE INDEX IF NOT EXISTS idx_cashier_availability_cashier ON cashier_availability(cashier_id);
+CREATE INDEX IF NOT EXISTS idx_cashier_availability_active ON cashier_availability(is_active);
+CREATE INDEX IF NOT EXISTS idx_order_notifications_cashier ON order_notifications(cashier_id, is_read);
 
 -- Add updated_at triggers for new tables
-CREATE TRIGGER update_cashier_availability_updated_at BEFORE UPDATE ON cashier_availability
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_cashier_availability_updated_at') THEN
+        CREATE TRIGGER update_cashier_availability_updated_at BEFORE UPDATE ON cashier_availability
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+    END IF;
+END $$;
 
 -- Insert some test cashier data (optional)
 -- This will create a few test cashiers for development
 INSERT INTO users (id, email, phone, password_hash, role, is_cashier, cashier_verified_at, is_verified, is_active) 
 VALUES 
-    (uuid_generate_v4(), 'cashier1@test.com', '+59112345001', '$2y$10$test_hash_1', 'cashier', true, CURRENT_TIMESTAMP, true, true),
-    (uuid_generate_v4(), 'cashier2@test.com', '+59112345002', '$2y$10$test_hash_2', 'cashier', true, CURRENT_TIMESTAMP, true, true),
-    (uuid_generate_v4(), 'cashier3@test.com', '+59112345003', '$2y$10$test_hash_3', 'cashier', true, CURRENT_TIMESTAMP, true, true)
+    (uuid_generate_v4(), 'cashier1@test.com', '+59112345001', '$2a$10$5dxor6U7gSJ41QCXSnj5IOYgtmIHvzbk54oWz1glGnxeNeqj6.ggS', 'cashier', true, CURRENT_TIMESTAMP, true, true),
+    (uuid_generate_v4(), 'cashier2@test.com', '+59112345002', '$2a$10$5dxor6U7gSJ41QCXSnj5IOYgtmIHvzbk54oWz1glGnxeNeqj6.ggS', 'cashier', true, CURRENT_TIMESTAMP, true, true),
+    (uuid_generate_v4(), 'cashier3@test.com', '+59112345003', '$2a$10$5dxor6U7gSJ41QCXSnj5IOYgtmIHvzbk54oWz1glGnxeNeqj6.ggS', 'cashier', true, CURRENT_TIMESTAMP, true, true)
 ON CONFLICT (email) DO NOTHING;
 
 -- Set up initial cashier availability for test cashiers
