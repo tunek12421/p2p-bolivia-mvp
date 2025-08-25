@@ -60,7 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setIsLoading(true)
-      const response = await api.post('/api/v1/login', { username: email, password })
+      console.log('🔑 AUTH: Starting login process', { email, passwordLength: password.length })
+      console.log('🔑 AUTH: API baseURL:', api.defaults.baseURL)
+      console.log('🔑 AUTH: Login payload:', { email, password: password.replace(/./g, '*') })
+      
+      const response = await api.post('/api/v1/login', { email, password })
+      console.log('✅ AUTH: Login API call successful')
       
       const { user_id: UserID, access_token: userToken, expires_in: ExpiresIn } = response.data
       

@@ -135,6 +135,31 @@ export const p2pAPI = {
   
   getMarketDepth: (currency_from: string, currency_to: string) =>
     api.get('/api/v1/market/depth', { params: { currency_from, currency_to } }),
+
+  // NEW P2P SEQUENCE ENDPOINTS
+  // Get order details with payment instructions
+  getOrderDetails: (orderId: string) => api.get(`/api/v1/orders/${orderId}`),
+  
+  // Mark order as paid (MATCHED -> PROCESSING)
+  markOrderAsPaid: (orderId: string) => api.post(`/api/v1/orders/${orderId}/mark-paid`),
+  
+  // Cashier endpoints
+  cashier: {
+    // Get pending orders for cashiers
+    getPendingOrders: () => api.get('/api/v1/cashier/pending-orders'),
+    
+    // Accept an order (PENDING -> MATCHED)
+    acceptOrder: (orderId: string) => api.post(`/api/v1/cashier/orders/${orderId}/accept`),
+    
+    // Confirm payment received (PROCESSING -> COMPLETED)
+    confirmPayment: (orderId: string) => api.post(`/api/v1/cashier/orders/${orderId}/confirm-payment`),
+    
+    // Get cashier's assigned orders
+    getMyOrders: () => api.get('/api/v1/cashier/my-orders'),
+    
+    // Get cashier metrics
+    getMetrics: () => api.get('/api/v1/cashier/metrics'),
+  }
 }
 
 // Wallet API
@@ -202,9 +227,30 @@ export interface Order {
   min_amount: number
   max_amount: number
   payment_methods: string[]
-  status: 'ACTIVE' | 'FILLED' | 'CANCELLED' | 'PARTIAL'
+  status: 'PENDING' | 'MATCHED' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED' | 'ACTIVE' | 'FILLED' | 'PARTIAL'
   created_at: string
+  updated_at: string
+  cashier_id?: string
+  accepted_at?: string
+  expires_at?: string
   matches?: string[]
+}
+
+export interface OrderDetails extends Order {
+  // Payment instructions for matched orders
+  payment_instructions?: {
+    bank_name: string
+    account_number: string
+    account_holder: string
+    amount_bob: number
+    reference: string
+    instructions: string
+  }
+  // Cashier information for matched orders
+  cashier?: {
+    first_name: string
+    phone: string
+  }
 }
 
 export interface OrderBook {

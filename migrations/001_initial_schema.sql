@@ -14,6 +14,9 @@ CREATE TABLE users (
     kyc_level INTEGER DEFAULT 0 CHECK (kyc_level >= 0 AND kyc_level <= 4),
     two_fa_enabled BOOLEAN DEFAULT false,
     two_fa_secret VARCHAR(255),
+    is_cashier BOOLEAN DEFAULT false,
+    cashier_balance_usd DECIMAL(20,8) DEFAULT 0,
+    cashier_locked_usd DECIMAL(20,8) DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -116,7 +119,13 @@ CREATE TABLE orders (
     amount DECIMAL(20,8) NOT NULL CHECK (amount > 0),
     remaining_amount DECIMAL(20,8) NOT NULL CHECK (remaining_amount >= 0),
     rate DECIMAL(20,8) NOT NULL CHECK (rate > 0),
-    status VARCHAR(20) DEFAULT 'ACTIVE',
+    min_amount DECIMAL(20,8) DEFAULT 0,
+    max_amount DECIMAL(20,8) DEFAULT 0,
+    payment_methods JSONB DEFAULT '[]'::jsonb,
+    status VARCHAR(20) DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'FILLED', 'CANCELLED', 'PARTIAL', 'PENDING', 'MATCHED', 'PROCESSING', 'COMPLETED', 'EXPIRED')),
+    cashier_id UUID REFERENCES users(id),
+    accepted_at TIMESTAMP WITH TIME ZONE,
+    expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -231,3 +240,29 @@ CREATE TRIGGER update_wallet_transactions_updated_at BEFORE UPDATE ON wallet_tra
 
 CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+
+-- Create cashier_order_assignments table for tracking cashier assignments
+CREATE TABLE IF NOT EXISTS cashier_order_assignments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    cashier_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'ASSIGNED' CHECK (status IN ('ASSIGNED', 'ACCEPTED', 'COMPLETED', 'CANCELLED')),
+    UNIQUE(order_id, cashier_id)
+);
+
+-- Create sample users for testing (password is 'password123')
+INSERT INTO users (id, email, phone, password_hash, is_verified, is_active, is_cashier) VALUES 
+    ('ed7f1525-5c84-4113-a0ee-8de52277bb75', 'user@test.com', '+59178123456', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3VfiHrqrfC', true, true, false),
+    ('f8e8d4a2-6d75-4b8f-9c31-2a5e4f7b8c9d', 'cashier@test.com', '+59178654321', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3VfiHrqrfC', true, true, true)
+ON CONFLICT (email) DO NOTHING;
+
+-- Create sample wallets for testing
+INSERT INTO wallets (user_id, currency, balance, locked_balance) VALUES 
+    ('ed7f1525-5c84-4113-a0ee-8de52277bb75', 'USD', 1000.00000000, 0.00000000),
+    ('ed7f1525-5c84-4113-a0ee-8de52277bb75', 'BOB', 6900.00000000, 0.00000000),
+    ('ed7f1525-5c84-4113-a0ee-8de52277bb75', 'USDT', 500.00000000, 0.00000000),
+    ('f8e8d4a2-6d75-4b8f-9c31-2a5e4f7b8c9d', 'USD', 5000.00000000, 0.00000000),
+    ('f8e8d4a2-6d75-4b8f-9c31-2a5e4f7b8c9d', 'BOB', 50000.00000000, 0.00000000)
+ON CONFLICT (user_id, currency) DO NOTHING;

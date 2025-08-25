@@ -20,22 +20,18 @@ export default function CreateOrderPage() {
   const [isLoadingWallets, setIsLoadingWallets] = useState(true)
   
   const [formData, setFormData] = useState({
-    type: 'BUY' as 'BUY' | 'SELL',
-    currency_from: '',
-    currency_to: '',
+    type: 'SELL' as 'BUY' | 'SELL',
+    currency_from: 'USD',
+    currency_to: 'BOB',
     amount: '',
     rate: '',
     min_amount: '',
     max_amount: '',
-    payment_methods: [] as string[]
+    payment_methods: ['qr'] as string[]
   })
 
   const availablePaymentMethods = [
-    { value: 'transferencia_bancaria', label: 'Transferencia Bancaria' },
-    { value: 'qr_simple', label: 'QR Simple' },
-    { value: 'paypal', label: 'PayPal' },
-    { value: 'western_union', label: 'Western Union' },
-    { value: 'moneygram', label: 'MoneyGram' }
+    { value: 'qr', label: 'QR' }
   ]
 
   const currencies = ['BOB', 'USD', 'USDT']
@@ -133,8 +129,14 @@ export default function CreateOrderPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('🚀 FRONTEND: Iniciando creación de orden')
+    console.log('📋 FRONTEND: FormData original:', formData)
     
-    if (!validateForm()) return
+    if (!validateForm()) {
+      console.log('❌ FRONTEND: Validación falló')
+      return
+    }
+    console.log('✅ FRONTEND: Validación exitosa')
 
     setIsLoading(true)
     
@@ -145,20 +147,43 @@ export default function CreateOrderPage() {
         currency_to: formData.currency_to,
         amount: parseFloat(formData.amount),
         rate: parseFloat(formData.rate),
-        min_amount: formData.min_amount ? parseFloat(formData.min_amount) : undefined,
+        min_amount: formData.min_amount ? parseFloat(formData.min_amount) : 0,
         max_amount: formData.max_amount ? parseFloat(formData.max_amount) : parseFloat(formData.amount),
         payment_methods: formData.payment_methods
       }
+      
+      console.log('📦 FRONTEND: Datos a enviar al API:', orderData)
+      console.log('🔢 FRONTEND: Tipos de datos:')
+      console.log('  - type:', typeof orderData.type, orderData.type)
+      console.log('  - currency_from:', typeof orderData.currency_from, orderData.currency_from)
+      console.log('  - currency_to:', typeof orderData.currency_to, orderData.currency_to)
+      console.log('  - amount:', typeof orderData.amount, orderData.amount)
+      console.log('  - rate:', typeof orderData.rate, orderData.rate)
+      console.log('  - min_amount:', typeof orderData.min_amount, orderData.min_amount)
+      console.log('  - max_amount:', typeof orderData.max_amount, orderData.max_amount)
+      console.log('  - payment_methods:', typeof orderData.payment_methods, orderData.payment_methods)
 
-      await p2pAPI.createOrder(orderData)
+      console.log('📡 FRONTEND: Llamando a p2pAPI.createOrder...')
+      const response = await p2pAPI.createOrder(orderData)
+      console.log('✅ FRONTEND: Respuesta exitosa:', response)
+      
       toast.success('Orden creada exitosamente')
+      console.log('🧭 FRONTEND: Redirigiendo a /trade/orders')
       router.push('/trade/orders')
     } catch (error: any) {
-      console.error('Error creating order:', error)
+      console.error('❌ FRONTEND: Error creating order:', error)
+      console.log('🔍 FRONTEND: Detalles del error:')
+      console.log('  - Status:', error.response?.status)
+      console.log('  - StatusText:', error.response?.statusText)
+      console.log('  - Data:', error.response?.data)
+      console.log('  - Headers:', error.response?.headers)
+      console.log('  - Config:', error.config)
+      
       const message = error.response?.data?.error || 'Error creando la orden'
       toast.error(message)
     } finally {
       setIsLoading(false)
+      console.log('🏁 FRONTEND: Proceso terminado, loading = false')
     }
   }
 

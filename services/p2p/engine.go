@@ -51,27 +51,67 @@ func (e *MatchingEngine) Start() {
 
 func (e *MatchingEngine) AddOrder(order Order) (string, error) {
 	ctx := context.Background()
+	log.Println("🔧 ENGINE: AddOrder iniciado")
 	
 	// Set order status to PENDING - cashiers will accept manually
 	order.Status = "PENDING"
+	log.Printf("📝 ENGINE: Status establecido a: %s", order.Status)
 	
-	// Insert order into database
+	// Insert order into database (both tables for consistency)
 	query := `
-		INSERT INTO orders (id, user_id, order_type, currency_from, currency_to, amount, 
+		INSERT INTO orders (user_id, order_type, currency_from, currency_to, amount, 
 			remaining_amount, rate, min_amount, max_amount, payment_methods, status, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING id
 	`
 	
 	paymentMethodsJSON, _ := json.Marshal(order.PaymentMethods)
+	log.Printf("🗃️ ENGINE: PaymentMethods JSON: %s", string(paymentMethodsJSON))
+	log.Printf("📊 ENGINE: Query SQL: %s", query)
+	log.Printf("📋 ENGINE: Parámetros:")
+	log.Printf("  $1 user_id: %s", order.UserID)
+	log.Printf("  $2 order_type: %s", order.Type)
+	log.Printf("  $3 currency_from: %s", order.CurrencyFrom)
+	log.Printf("  $4 currency_to: %s", order.CurrencyTo)
+	log.Printf("  $5 amount: %s", order.Amount.String())
+	log.Printf("  $6 remaining_amount: %s", order.RemainingAmount.String())
+	log.Printf("  $7 rate: %s", order.Rate.String())
+	log.Printf("  $8 min_amount: %s", order.MinAmount.String())
+	log.Printf("  $9 max_amount: %s", order.MaxAmount.String())
+	log.Printf("  $10 payment_methods: %s", string(paymentMethodsJSON))
+	log.Printf("  $11 status: %s", order.Status)
+	log.Printf("  $12 created_at: %s", order.CreatedAt.Format(time.RFC3339))
 	
-	_, err := e.db.Exec(query,
+	log.Println("💾 ENGINE: Ejecutando QueryRow...")
+	err := e.db.QueryRow(query,
+		order.UserID, order.Type, order.CurrencyFrom, order.CurrencyTo,
+		order.Amount, order.RemainingAmount, order.Rate, order.MinAmount, order.MaxAmount,
+		string(paymentMethodsJSON), order.Status, order.CreatedAt,
+	).Scan(&order.ID)
+	
+	if err != nil {
+		log.Printf("❌ ENGINE: Error en QueryRow: %v", err)
+		return "", fmt.Errorf("failed to insert into orders table: %v", err)
+	}
+	
+	log.Printf("✅ ENGINE: Orden insertada exitosamente con ID: %s", order.ID)
+
+	// Also insert into p2p_orders for backward compatibility
+	p2pQuery := `
+		INSERT INTO p2p_orders (id, user_id, order_type, currency_from, currency_to, amount, 
+			remaining_amount, rate, min_amount, max_amount, payment_methods, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		ON CONFLICT (id) DO NOTHING
+	`
+	
+	_, err = e.db.Exec(p2pQuery,
 		order.ID, order.UserID, order.Type, order.CurrencyFrom, order.CurrencyTo,
 		order.Amount, order.RemainingAmount, order.Rate, order.MinAmount, order.MaxAmount,
 		string(paymentMethodsJSON), order.Status, order.CreatedAt,
 	)
 	
 	if err != nil {
-		return "", fmt.Errorf("failed to insert order: %v", err)
+		log.Printf("Warning: failed to insert into p2p_orders table: %v", err)
 	}
 	
 	// Add to Redis cache for cashiers to see pending orders
@@ -398,9 +438,9 @@ func (e *MatchingEngine) refreshOrderBookCache() {
 func (e *MatchingEngine) GetPendingOrders() ([]Order, error) {
 	query := `
 		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
-			rate, min_amount, max_amount, payment_methods, status, created_at
+			rate, COALESCE(min_amount, 0), COALESCE(max_amount, 0), COALESCE(payment_methods, '[]'), status, created_at
 		FROM orders 
-		WHERE status = 'PENDING' AND expires_at > NOW()
+		WHERE status = 'PENDING' AND (expires_at IS NULL OR expires_at > NOW())
 		ORDER BY created_at ASC
 	`
 	
@@ -483,17 +523,33 @@ func (e *MatchingEngine) AcceptOrder(orderID, cashierID string) error {
 		}
 	}
 	
-	// Update order with cashier assignment
+	// Update order with cashier assignment in both tables
 	_, err = tx.Exec(`
 		UPDATE orders SET 
 			cashier_id = $1,
 			status = 'MATCHED',
-			accepted_at = NOW()
+			accepted_at = NOW(),
+			updated_at = NOW()
 		WHERE id = $2
 	`, cashierID, orderID)
 	
 	if err != nil {
 		return fmt.Errorf("failed to update order: %v", err)
+	}
+
+	// Also update p2p_orders table for consistency
+	_, err = tx.Exec(`
+		UPDATE p2p_orders SET 
+			cashier_id = $1,
+			status = 'MATCHED',
+			accepted_at = NOW(),
+			updated_at = NOW()
+		WHERE id = $2
+	`, cashierID, orderID)
+	
+	if err != nil {
+		// Log error but don't fail the transaction
+		log.Printf("Warning: failed to update p2p_orders table: %v", err)
 	}
 	
 	// Create cashier assignment record
@@ -541,13 +597,23 @@ func (e *MatchingEngine) ConfirmPayment(orderID, cashierID string) error {
 		return fmt.Errorf("order not found or not assigned to this cashier")
 	}
 	
-	// Update order to completed
+	// Update order to completed in both tables
 	_, err = tx.Exec(`
-		UPDATE orders SET status = 'COMPLETED' WHERE id = $1
+		UPDATE orders SET status = 'COMPLETED', updated_at = NOW() WHERE id = $1
 	`, orderID)
 	
 	if err != nil {
 		return fmt.Errorf("failed to complete order: %v", err)
+	}
+
+	// Also update p2p_orders table for consistency
+	_, err = tx.Exec(`
+		UPDATE p2p_orders SET status = 'COMPLETED', updated_at = NOW() WHERE id = $1
+	`, orderID)
+	
+	if err != nil {
+		// Log error but don't fail the transaction
+		log.Printf("Warning: failed to update p2p_orders table: %v", err)
 	}
 	
 	// Release locked funds and transfer to buyer for BUY orders
@@ -632,8 +698,8 @@ func (e *MatchingEngine) GetActiveOrders(userID string) ([]Order, error) {
 	query := `
 		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
 			rate, min_amount, max_amount, payment_methods, status, created_at
-		FROM p2p_orders 
-		WHERE user_id = $1 AND status IN ('ACTIVE', 'PARTIAL')
+		FROM orders 
+		WHERE user_id = $1 AND status IN ('ACTIVE', 'PARTIAL', 'PENDING', 'MATCHED', 'PROCESSING', 'COMPLETED')
 		ORDER BY created_at DESC
 	`
 	

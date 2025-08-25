@@ -144,6 +144,15 @@ func (g *Gateway) setupRoutes() {
         api.GET("/user/stats", g.proxyToService("p2p"))
         log.Printf("📋 GATEWAY: User-specific routes registered")
 
+        // Cashier P2P routes
+        log.Printf("🏦 GATEWAY: Registering cashier routes")
+        api.GET("/cashier/pending-orders", g.proxyToService("p2p"))
+        api.POST("/cashier/orders/:id/accept", g.proxyToService("p2p"))
+        api.POST("/cashier/orders/:id/confirm-payment", g.proxyToService("p2p"))
+        api.GET("/cashier/my-orders", g.proxyToService("p2p"))
+        api.GET("/cashier/metrics", g.proxyToService("p2p"))
+        log.Printf("🏦 GATEWAY: Cashier routes registered")
+
         // Wallet routes
         api.GET("/wallets", g.proxyToService("wallet"))
         api.GET("/wallets/:currency", g.proxyToService("wallet"))

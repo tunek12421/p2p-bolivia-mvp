@@ -1,8 +1,10 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -117,13 +119,19 @@ func (s *Server) handleGetOrders(c *gin.Context) {
 }
 
 func (s *Server) handleCreateOrder(c *gin.Context) {
+	log.Println("🚀 BACKEND: handleCreateOrder iniciado")
+	
 	var req CreateOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("❌ BACKEND: Error en ShouldBindJSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	
+	log.Printf("📦 BACKEND: Request recibido: %+v", req)
+	
 	userID := c.GetString("user_id")
+	log.Printf("👤 BACKEND: UserID del token: %s", userID)
 	
 	// Convert to decimals
 	amount := decimal.NewFromFloat(req.Amount)
@@ -131,20 +139,30 @@ func (s *Server) handleCreateOrder(c *gin.Context) {
 	minAmount := decimal.NewFromFloat(req.MinAmount)
 	maxAmount := decimal.NewFromFloat(req.MaxAmount)
 	
+	log.Printf("🔢 BACKEND: Conversión de decimales completada:")
+	log.Printf("  - amount: %s (original: %f)", amount.String(), req.Amount)
+	log.Printf("  - rate: %s (original: %f)", rate.String(), req.Rate)
+	log.Printf("  - minAmount: %s (original: %f)", minAmount.String(), req.MinAmount)
+	log.Printf("  - maxAmount: %s (original: %f)", maxAmount.String(), req.MaxAmount)
+	
 	// Validate amounts
 	if minAmount.GreaterThan(amount) {
+		log.Printf("❌ BACKEND: Validación falló - min_amount (%s) > amount (%s)", minAmount.String(), amount.String())
 		c.JSON(http.StatusBadRequest, gin.H{"error": "min_amount cannot be greater than amount"})
 		return
 	}
 	
 	if maxAmount.LessThan(amount) && !maxAmount.IsZero() {
+		log.Printf("❌ BACKEND: Validación falló - max_amount (%s) < amount (%s)", maxAmount.String(), amount.String())
 		c.JSON(http.StatusBadRequest, gin.H{"error": "max_amount cannot be less than amount"})
 		return
 	}
 	
+	log.Println("✅ BACKEND: Validaciones de cantidad pasaron")
+	
 	// Create order
 	order := Order{
-		ID:              fmt.Sprintf("order_%d", time.Now().UnixNano()),
+		ID:              "", // Will be set by database
 		UserID:          userID,
 		Type:            req.Type,
 		CurrencyFrom:    req.CurrencyFrom,
@@ -155,7 +173,7 @@ func (s *Server) handleCreateOrder(c *gin.Context) {
 		MinAmount:       minAmount,
 		MaxAmount:       maxAmount,
 		PaymentMethods:  req.PaymentMethods,
-		Status:          "ACTIVE",
+		Status:          "PENDING",
 		CreatedAt:       time.Now(),
 	}
 	
@@ -163,12 +181,19 @@ func (s *Server) handleCreateOrder(c *gin.Context) {
 	expiresAt := time.Now().Add(24 * time.Hour)
 	order.ExpiresAt = &expiresAt
 	
+	log.Printf("📋 BACKEND: Orden creada (antes de DB): %+v", order)
+	log.Printf("⏰ BACKEND: ExpiresAt: %s", expiresAt.Format(time.RFC3339))
+	
 	// Add to matching engine (no automatic matching)
+	log.Println("🔧 BACKEND: Llamando a engine.AddOrder...")
 	orderID, err := s.engine.AddOrder(order)
 	if err != nil {
+		log.Printf("❌ BACKEND: Error en engine.AddOrder: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create order"})
 		return
 	}
+	
+	log.Printf("✅ BACKEND: Orden creada exitosamente con ID: %s", orderID)
 	
 	response := OrderResponse{
 		ID:              orderID,
@@ -182,7 +207,7 @@ func (s *Server) handleCreateOrder(c *gin.Context) {
 		MinAmount:       order.MinAmount,
 		MaxAmount:       order.MaxAmount,
 		PaymentMethods:  order.PaymentMethods,
-		Status:          "PENDING", // Orders start as PENDING, waiting for cashier
+		Status:          order.Status, // Use the actual status from the engine
 		CreatedAt:       order.CreatedAt,
 	}
 	
@@ -491,6 +516,138 @@ func (s *Server) handleGetOrderHistory(c *gin.Context) {
 	})
 }
 
+// handleMarkAsPaid allows user to mark that they have completed the payment
+func (s *Server) handleMarkAsPaid(c *gin.Context) {
+	orderID := c.Param("id")
+	userID := c.GetString("user_id")
+
+	if orderID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Order ID is required"})
+		return
+	}
+
+	// Verify order exists and belongs to user
+	var order Order
+	err := s.db.QueryRow(`
+		SELECT id, user_id, status, cashier_id
+		FROM orders 
+		WHERE id = $1 AND user_id = $2
+	`, orderID, userID).Scan(&order.ID, &order.UserID, &order.Status, &order.CashierID)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		return
+	}
+
+	// Order must be MATCHED status to mark as paid
+	if order.Status != "MATCHED" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Order must be in MATCHED status to mark as paid"})
+		return
+	}
+
+	// Must have a cashier assigned
+	if order.CashierID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Order must have a cashier assigned"})
+		return
+	}
+
+	// Update order status to PROCESSING
+	_, err = s.db.Exec(`
+		UPDATE orders 
+		SET status = 'PROCESSING', updated_at = NOW()
+		WHERE id = $1
+	`, orderID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update order status"})
+		return
+	}
+
+	// Also update p2p_orders table for consistency
+	s.db.Exec(`
+		UPDATE p2p_orders 
+		SET status = 'PROCESSING', updated_at = NOW()
+		WHERE id = $1
+	`, orderID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Payment marked as complete - waiting for cashier confirmation",
+		"order_id": orderID,
+		"status": "PROCESSING",
+	})
+}
+
+// handleGetOrderDetails returns detailed information about an order
+func (s *Server) handleGetOrderDetails(c *gin.Context) {
+	orderID := c.Param("id")
+	userID := c.GetString("user_id")
+
+	if orderID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Order ID is required"})
+		return
+	}
+
+	// Get order with cashier details
+	var order Order
+	var cashierID sql.NullString
+	var cashierName, cashierPhone sql.NullString
+	var paymentMethodsJSON string
+
+	query := `
+		SELECT o.id, o.user_id, o.cashier_id, o.order_type, o.currency_from, o.currency_to, 
+			   o.amount, o.remaining_amount, o.rate, o.min_amount, o.max_amount, 
+			   COALESCE(o.payment_methods, '[]'), o.status, o.accepted_at, o.expires_at, o.created_at,
+			   u.first_name, u.phone
+		FROM orders o
+		LEFT JOIN users u ON o.cashier_id = u.id
+		WHERE o.id = $1 AND o.user_id = $2
+	`
+
+	err := s.db.QueryRow(query, orderID, userID).Scan(
+		&order.ID, &order.UserID, &cashierID, &order.Type, &order.CurrencyFrom,
+		&order.CurrencyTo, &order.Amount, &order.RemainingAmount, &order.Rate,
+		&order.MinAmount, &order.MaxAmount, &paymentMethodsJSON, &order.Status,
+		&order.AcceptedAt, &order.ExpiresAt, &order.CreatedAt,
+		&cashierName, &cashierPhone,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		return
+	}
+
+	// Parse payment methods
+	json.Unmarshal([]byte(paymentMethodsJSON), &order.PaymentMethods)
+
+	response := gin.H{
+		"order": order,
+	}
+
+	// Add cashier details if available
+	if cashierID.Valid {
+		response["cashier"] = gin.H{
+			"id":    cashierID.String,
+			"name":  cashierName.String,
+			"phone": cashierPhone.String,
+		}
+
+		// Add payment instructions for MATCHED orders
+		if order.Status == "MATCHED" {
+			response["payment_instructions"] = gin.H{
+				"bank_name":    "Banco Nacional de Bolivia",
+				"account":      "10000023456",
+				"holder_name":  cashierName.String,
+				"amount_bob":   order.Amount.Mul(order.Rate),
+				"reference":    orderID,
+				"message":      fmt.Sprintf("Transferir %s BOB a la cuenta indicada con referencia: %s", 
+					order.Amount.Mul(order.Rate).String(), orderID),
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 func (s *Server) handleGetTradingStats(c *gin.Context) {
 	userID := c.GetString("user_id")
 	
@@ -498,21 +655,21 @@ func (s *Server) handleGetTradingStats(c *gin.Context) {
 	var totalOrders, activeOrders, filledOrders, cancelledOrders int
 	var totalVolume decimal.Decimal
 	
-	s.db.QueryRow("SELECT COUNT(*) FROM p2p_orders WHERE user_id = $1", userID).Scan(&totalOrders)
-	s.db.QueryRow("SELECT COUNT(*) FROM p2p_orders WHERE user_id = $1 AND status = 'ACTIVE'", userID).Scan(&activeOrders)
-	s.db.QueryRow("SELECT COUNT(*) FROM p2p_orders WHERE user_id = $1 AND status = 'FILLED'", userID).Scan(&filledOrders)
-	s.db.QueryRow("SELECT COUNT(*) FROM p2p_orders WHERE user_id = $1 AND status = 'CANCELLED'", userID).Scan(&cancelledOrders)
+	s.db.QueryRow("SELECT COUNT(*) FROM orders WHERE user_id = $1", userID).Scan(&totalOrders)
+	s.db.QueryRow("SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status IN ('PENDING', 'MATCHED', 'PROCESSING')", userID).Scan(&activeOrders)
+	s.db.QueryRow("SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status = 'COMPLETED'", userID).Scan(&filledOrders)
+	s.db.QueryRow("SELECT COUNT(*) FROM orders WHERE user_id = $1 AND status = 'CANCELLED'", userID).Scan(&cancelledOrders)
 	
 	s.db.QueryRow(`
-		SELECT COALESCE(SUM(amount - remaining_amount), 0) 
-		FROM p2p_orders 
-		WHERE user_id = $1 AND status IN ('FILLED', 'PARTIAL')
+		SELECT COALESCE(SUM(amount), 0) 
+		FROM orders 
+		WHERE user_id = $1 AND status = 'COMPLETED'
 	`, userID).Scan(&totalVolume)
 	
 	stats := gin.H{
 		"total_orders":     totalOrders,
 		"active_orders":    activeOrders,
-		"filled_orders":    filledOrders,
+		"completed_orders": filledOrders,
 		"cancelled_orders": cancelledOrders,
 		"total_volume":     totalVolume,
 		"success_rate":     0.0,

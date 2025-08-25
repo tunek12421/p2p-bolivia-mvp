@@ -133,6 +133,8 @@ func (s *Server) setupRoutes() {
         // User-specific routes (protected)
         api.GET("/user/orders", s.authMiddleware(), s.handleGetUserOrders)
         api.DELETE("/orders/:id", s.authMiddleware(), s.handleCancelOrder)
+        api.GET("/orders/:id", s.authMiddleware(), s.handleGetOrderDetails)
+        api.POST("/orders/:id/mark-paid", s.authMiddleware(), s.handleMarkAsPaid)
         api.GET("/user/matches", s.authMiddleware(), s.handleGetMatches)
         api.GET("/user/history", s.authMiddleware(), s.handleGetOrderHistory)
         api.GET("/user/stats", s.authMiddleware(), s.handleGetTradingStats)

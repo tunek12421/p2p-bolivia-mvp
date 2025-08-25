@@ -13,9 +13,9 @@ COPY . .
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.18
 
-RUN apk --no-cache add ca-certificates
+RUN apk update && apk --no-cache add ca-certificates
 WORKDIR /root/
 
 # Copy the binary from builder

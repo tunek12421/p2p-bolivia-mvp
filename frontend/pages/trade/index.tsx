@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useRequireAuth } from '../../lib/auth'
 import { p2pAPI, Order } from '../../lib/api'
 import DashboardLayout from '../../components/DashboardLayout'
+import OrderDetailsModal from '../../components/p2p/OrderDetailsModal'
 import Link from 'next/link'
 import { 
   PlusIcon,
@@ -9,7 +10,8 @@ import {
   ArrowDownIcon,
   MagnifyingGlassIcon,
   FunnelIcon,
-  ChartBarIcon
+  ChartBarIcon,
+  EyeIcon
 } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
 
@@ -28,6 +30,10 @@ export default function TradePage() {
   })
   
   const [activeTab, setActiveTab] = useState<'all' | 'buy' | 'sell'>('all')
+  
+  // Modal states
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -94,6 +100,14 @@ export default function TradePage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'PENDING':
+        return <span className="badge-warning">Pendiente</span>
+      case 'MATCHED':
+        return <span className="badge-primary">Emparejada</span>
+      case 'PROCESSING':
+        return <span className="badge bg-purple-100 text-purple-800">Procesando</span>
+      case 'COMPLETED':
+        return <span className="badge-success">Completada</span>
       case 'ACTIVE':
         return <span className="badge-primary">Activa</span>
       case 'FILLED':
@@ -102,8 +116,21 @@ export default function TradePage() {
         return <span className="badge-danger">Cancelada</span>
       case 'PARTIAL':
         return <span className="badge-warning">Parcial</span>
+      case 'EXPIRED':
+        return <span className="badge bg-gray-100 text-gray-800">Expirada</span>
       default:
         return <span className="badge">{status}</span>
+    }
+  }
+
+  const handleCancelOrder = async (orderId: string) => {
+    try {
+      await p2pAPI.cancelOrder(orderId)
+      toast.success('Orden cancelada exitosamente')
+      await fetchTradeData() // Refresh orders
+    } catch (error: any) {
+      console.error('Error canceling order:', error)
+      toast.error(error.response?.data?.message || 'Error cancelando la orden')
     }
   }
 
@@ -338,11 +365,36 @@ export default function TradePage() {
                         {getStatusBadge(order.status)}
                       </td>
                       <td className="py-3 px-4">
-                        {order.status === 'ACTIVE' && order.user_id !== user?.id && (
-                          <button className="btn-primary text-xs">
-                            {order.type === 'BUY' ? 'Vender' : 'Comprar'}
-                          </button>
-                        )}
+                        <div className="flex justify-end space-x-2">
+                          {/* View Details Button - show for P2P orders */}
+                          {['PENDING', 'MATCHED', 'PROCESSING', 'COMPLETED'].includes(order.status) && (
+                            <button
+                              onClick={() => {
+                                setSelectedOrderId(order.id)
+                                setIsDetailsModalOpen(true)
+                              }}
+                              className="text-blue-600 hover:text-blue-900 flex items-center p-1 rounded"
+                              title="Ver detalles"
+                            >
+                              <EyeIcon className="w-4 h-4" />
+                            </button>
+                          )}
+                          {/* Cancel Button - only for user's own active orders */}
+                          {order.status === 'ACTIVE' && order.user_id === user?.id && (
+                            <button
+                              onClick={() => handleCancelOrder(order.id)}
+                              className="text-red-600 hover:text-red-900 text-xs px-2 py-1 rounded"
+                            >
+                              Cancelar
+                            </button>
+                          )}
+                          {/* Trade Button - for other users' active orders */}
+                          {order.status === 'ACTIVE' && order.user_id !== user?.id && (
+                            <button className="btn-primary text-xs">
+                              {order.type === 'BUY' ? 'Vender' : 'Comprar'}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -391,6 +443,17 @@ export default function TradePage() {
           </div>
         </div>
       </div>
+
+      {/* Order Details Modal */}
+      <OrderDetailsModal
+        isOpen={isDetailsModalOpen}
+        onClose={() => {
+          setIsDetailsModalOpen(false)
+          setSelectedOrderId(null)
+        }}
+        orderId={selectedOrderId}
+        onOrderUpdate={fetchTradeData}
+      />
     </DashboardLayout>
   )
 }
