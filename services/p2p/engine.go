@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -567,6 +568,9 @@ func (e *MatchingEngine) AcceptOrder(orderID, cashierID string) error {
 		return err
 	}
 	
+	// Create chat room for this transaction
+	go e.createTransactionChatRoom(orderID, order.UserID, cashierID)
+	
 	// Remove from pending cache and update order cache
 	e.removePendingOrderFromCache(orderID)
 	order.Status = "MATCHED"
@@ -797,4 +801,30 @@ func (e *MatchingEngine) GetMarketDepth(currencyFrom, currencyTo string) (map[st
 		"sell_levels": sellLevels,
 		"pair":        fmt.Sprintf("%s_%s", currencyFrom, currencyTo),
 	}, nil
+}
+
+// createTransactionChatRoom creates a chat room for a P2P transaction
+func (e *MatchingEngine) createTransactionChatRoom(orderID, userID, cashierID string) {
+	log.Printf("🔄 Creating chat room for transaction %s between user %s and cashier %s", orderID, userID, cashierID)
+	
+	// Create participants JSON array
+	participants, err := json.Marshal([]string{userID, cashierID})
+	if err != nil {
+		log.Printf("❌ Error marshaling participants: %v", err)
+		return
+	}
+	
+	// Create chat room directly in database
+	roomID := uuid.New().String()
+	_, err = e.db.Exec(`
+		INSERT INTO chat_rooms (id, room_type, transaction_id, participants, created_at, last_message_at)
+		VALUES ($1, $2, $3, $4, NOW(), NOW())
+	`, roomID, "TRANSACTION", orderID, string(participants))
+	
+	if err != nil {
+		log.Printf("❌ Error creating chat room in database: %v", err)
+		return
+	}
+	
+	log.Printf("✅ Chat room created successfully for transaction %s", orderID)
 }

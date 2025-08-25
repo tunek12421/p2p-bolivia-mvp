@@ -3,6 +3,7 @@ import { useRequireAuth } from '../../lib/auth'
 import { p2pAPI, Order } from '../../lib/api'
 import DashboardLayout from '../../components/DashboardLayout'
 import OrderDetailsModal from '../../components/p2p/OrderDetailsModal'
+import TransactionChat from '../../components/TransactionChat'
 import Link from 'next/link'
 import { 
   ArrowLeftIcon,
@@ -10,7 +11,8 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   CogIcon,
-  EyeIcon
+  EyeIcon,
+  ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
 
@@ -22,6 +24,10 @@ export default function UserOrdersPage() {
   // Modal states
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
+  
+  // Chat states
+  const [chatOrderId, setChatOrderId] = useState<string | null>(null)
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -115,6 +121,20 @@ export default function UserOrdersPage() {
 
   const canCancelOrder = (order: Order) => {
     return order.status === 'PENDING' || order.status === 'MATCHED'
+  }
+
+  const canOpenChat = (order: Order) => {
+    return order.status === 'MATCHED' || order.status === 'PROCESSING'
+  }
+
+  const handleOpenChat = (orderId: string) => {
+    setChatOrderId(orderId)
+    setIsChatOpen(true)
+  }
+
+  const handleCloseChat = () => {
+    setIsChatOpen(false)
+    setChatOrderId(null)
   }
 
   if (!user) return null
@@ -299,9 +319,21 @@ export default function UserOrdersPage() {
                             setIsDetailsModalOpen(true)
                           }}
                           className="text-blue-600 hover:text-blue-900"
+                          title="Ver detalles"
                         >
                           <EyeIcon className="w-4 h-4" />
                         </button>
+                        
+                        {canOpenChat(order) && (
+                          <button
+                            onClick={() => handleOpenChat(order.id)}
+                            className="text-green-600 hover:text-green-900"
+                            title="Abrir chat"
+                          >
+                            <ChatBubbleLeftRightIcon className="w-4 h-4" />
+                          </button>
+                        )}
+                        
                         {canCancelOrder(order) && (
                           <button
                             onClick={() => {
@@ -310,6 +342,7 @@ export default function UserOrdersPage() {
                               }
                             }}
                             className="text-red-600 hover:text-red-900"
+                            title="Cancelar orden"
                           >
                             <XCircleIcon className="w-4 h-4" />
                           </button>
@@ -334,6 +367,15 @@ export default function UserOrdersPage() {
         orderId={selectedOrderId}
         onOrderUpdate={fetchUserOrders}
       />
+
+      {/* Transaction Chat */}
+      {isChatOpen && chatOrderId && (
+        <TransactionChat
+          orderId={chatOrderId}
+          userType="user"
+          onClose={handleCloseChat}
+        />
+      )}
     </DashboardLayout>
   )
 }

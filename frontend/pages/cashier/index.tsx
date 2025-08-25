@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useRequireAuth } from '../../lib/auth'
 import { p2pAPI, Order } from '../../lib/api'
 import DashboardLayout from '../../components/DashboardLayout'
+import TransactionChat from '../../components/TransactionChat'
 import {
   ClockIcon,
   CheckCircleIcon,
@@ -9,7 +10,8 @@ import {
   UserIcon,
   PhoneIcon,
   CalendarIcon,
-  CurrencyDollarIcon
+  CurrencyDollarIcon,
+  ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
 
@@ -25,6 +27,10 @@ export default function CashierDashboard() {
   })
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'pending' | 'my-orders' | 'metrics'>('pending')
+  
+  // Chat states
+  const [chatOrderId, setChatOrderId] = useState<string | null>(null)
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -107,6 +113,20 @@ export default function CashierDashboard() {
     }
     
     return formatted
+  }
+
+  const canOpenChat = (order: Order) => {
+    return order.status === 'MATCHED' || order.status === 'PROCESSING'
+  }
+
+  const handleOpenChat = (orderId: string) => {
+    setChatOrderId(orderId)
+    setIsChatOpen(true)
+  }
+
+  const handleCloseChat = () => {
+    setIsChatOpen(false)
+    setChatOrderId(null)
   }
 
   const getStatusBadge = (status: string) => {
@@ -328,14 +348,26 @@ export default function CashierDashboard() {
                           </div>
                           <p className="text-sm text-gray-600">ID: {order.id}</p>
                         </div>
-                        {order.status === 'PROCESSING' && (
-                          <button
-                            onClick={() => handleConfirmPayment(order.id)}
-                            className="btn-success"
-                          >
-                            Confirmar Pago
-                          </button>
-                        )}
+                        <div className="flex gap-2">
+                          {canOpenChat(order) && (
+                            <button
+                              onClick={() => handleOpenChat(order.id)}
+                              className="btn-secondary flex items-center gap-2"
+                            >
+                              <ChatBubbleLeftRightIcon className="w-4 h-4" />
+                              Chat
+                            </button>
+                          )}
+                          
+                          {order.status === 'PROCESSING' && (
+                            <button
+                              onClick={() => handleConfirmPayment(order.id)}
+                              className="btn-success"
+                            >
+                              Confirmar Pago
+                            </button>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -419,6 +451,15 @@ export default function CashierDashboard() {
           )}
         </div>
       </div>
+
+      {/* Transaction Chat */}
+      {isChatOpen && chatOrderId && (
+        <TransactionChat
+          orderId={chatOrderId}
+          userType="cashier"
+          onClose={handleCloseChat}
+        />
+      )}
     </DashboardLayout>
   )
 }
