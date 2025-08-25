@@ -134,6 +134,7 @@ func (g *Gateway) setupRoutes() {
         api.GET("/orders/:id", g.proxyToService("p2p"))
         api.PUT("/orders/:id", g.proxyToService("p2p"))
         api.DELETE("/orders/:id", g.proxyToService("p2p"))
+        api.POST("/orders/:id/mark-paid", g.proxyToService("p2p"))
         api.GET("/orderbook", g.proxyToService("p2p"))
         api.POST("/trade", g.proxyToService("p2p"))
         api.GET("/users/:id/stats", g.proxyToService("p2p"))

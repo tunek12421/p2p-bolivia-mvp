@@ -589,7 +589,7 @@ func (e *MatchingEngine) ConfirmPayment(orderID, cashierID string) error {
 	var order Order
 	err = tx.QueryRow(`
 		SELECT id, user_id, order_type, currency_from, currency_to, amount, status
-		FROM orders WHERE id = $1 AND cashier_id = $2 AND status = 'MATCHED' FOR UPDATE
+		FROM orders WHERE id = $1 AND cashier_id = $2 AND status IN ('MATCHED', 'PROCESSING') FOR UPDATE
 	`, orderID, cashierID).Scan(&order.ID, &order.UserID, &order.Type, 
 		&order.CurrencyFrom, &order.CurrencyTo, &order.Amount, &order.Status)
 	

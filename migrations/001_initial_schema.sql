@@ -260,16 +260,37 @@ CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders
 
 
 -- Create sample users for testing (password is 'password123')
-INSERT INTO users (id, email, phone, password_hash, is_verified, is_active, is_cashier) VALUES 
-    ('ed7f1525-5c84-4113-a0ee-8de52277bb75', 'user@test.com', '+59178123456', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3VfiHrqrfC', true, true, false),
-    ('f8e8d4a2-6d75-4b8f-9c31-2a5e4f7b8c9d', 'cashier@test.com', '+59178654321', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3VfiHrqrfC', true, true, true)
+INSERT INTO users (id, email, phone, password_hash, is_verified, is_active, is_cashier, cashier_balance_usd) VALUES 
+    -- Usuario regular: password123
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'usuario.regular@test.com', '+59178999111', '$2a$10$5dxor6U7gSJ41QCXSnj5IOYgtmIHvzbk54oWz1glGnxeNeqj6.ggS', true, true, false, 0),
+    -- Cajero: password123 
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'cajero.nuevo@test.com', '+59178999222', '$2a$10$XxLkCM.4fZ118dGHFU0ARu5Hb.7JYytZe9vxydubjCjkzt2BqOGq.', true, true, true, 10000.00000000),
+    -- Usuarios originales para compatibilidad
+    ('ed7f1525-5c84-4113-a0ee-8de52277bb75', 'user@test.com', '+59178123456', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3VfiHrqrfC', true, true, false, 0),
+    ('f8e8d4a2-6d75-4b8f-9c31-2a5e4f7b8c9d', 'cashier@test.com', '+59178654321', '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj3VfiHrqrfC', true, true, true, 0)
 ON CONFLICT (email) DO NOTHING;
 
 -- Create sample wallets for testing
 INSERT INTO wallets (user_id, currency, balance, locked_balance) VALUES 
+    -- Wallets para usuario regular
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'USD', 1500.00000000, 0.00000000),
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'BOB', 10000.00000000, 0.00000000),
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'USDT', 0.00000000, 0.00000000),
+    -- Wallets para cajero
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'USD', 5000.00000000, 0.00000000),
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'BOB', 30000.00000000, 0.00000000),
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'USDT', 0.00000000, 0.00000000),
+    -- Wallets originales para compatibilidad
     ('ed7f1525-5c84-4113-a0ee-8de52277bb75', 'USD', 1000.00000000, 0.00000000),
     ('ed7f1525-5c84-4113-a0ee-8de52277bb75', 'BOB', 6900.00000000, 0.00000000),
     ('ed7f1525-5c84-4113-a0ee-8de52277bb75', 'USDT', 500.00000000, 0.00000000),
     ('f8e8d4a2-6d75-4b8f-9c31-2a5e4f7b8c9d', 'USD', 5000.00000000, 0.00000000),
     ('f8e8d4a2-6d75-4b8f-9c31-2a5e4f7b8c9d', 'BOB', 50000.00000000, 0.00000000)
 ON CONFLICT (user_id, currency) DO NOTHING;
+
+-- Create user profiles for test users
+INSERT INTO user_profiles (user_id, first_name, last_name, ci_number, country) 
+VALUES 
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Juan', 'Perez', '12345678', 'BO'),
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Maria', 'Rodriguez', '87654321', 'BO')
+ON CONFLICT (user_id) DO NOTHING;
