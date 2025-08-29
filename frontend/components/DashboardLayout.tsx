@@ -26,7 +26,7 @@ const navigation = [
   { name: 'Intercambiar', href: '/trade', icon: ArrowsRightLeftIcon },
   { name: 'Billetera', href: '/wallet', icon: CurrencyDollarIcon },
   { name: 'Órdenes', href: '/trade/orders', icon: ClockIcon },
-  { name: 'Analíticas', href: '/analytics', icon: ChartBarIcon },
+  // { name: 'Analíticas', href: '/analytics', icon: ChartBarIcon },
 ]
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {

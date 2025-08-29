@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRequireAuth } from '../lib/auth'
 import { p2pAPI, walletAPI, userAPI, WalletBalance, Order, TradingStats, UserProfile } from '../lib/api'
+import { fetchMarketRates, MarketRates, formatRate, getRateChange, formatIntuitiveRate, getConversionExample } from '../lib/marketRates'
 import { 
   CurrencyDollarIcon,
   ArrowUpIcon,
@@ -22,6 +23,7 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [stats, setStats] = useState<TradingStats | null>(null)
   const [rates, setRates] = useState<Record<string, any>>({})
+  const [marketRates, setMarketRates] = useState<MarketRates | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -30,16 +32,34 @@ export default function DashboardPage() {
     }
   }, [user])
 
+  // Auto-refresh market rates every 2 minutes
+  useEffect(() => {
+    const refreshRates = async () => {
+      try {
+        const newRates = await fetchMarketRates()
+        setMarketRates(newRates)
+      } catch (error) {
+        console.error('Failed to refresh market rates:', error)
+      }
+    }
+
+    // Set up interval for market rates refresh
+    const interval = setInterval(refreshRates, 2 * 60 * 1000) // 2 minutes
+
+    return () => clearInterval(interval)
+  }, [])
+
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true)
       
-      const [profileRes, walletsRes, ordersRes, statsRes, ratesRes] = await Promise.allSettled([
+      const [profileRes, walletsRes, ordersRes, statsRes, ratesRes, marketRatesRes] = await Promise.allSettled([
         userAPI.getProfile(),
         walletAPI.getWallets(),
         p2pAPI.getUserOrders(),
         p2pAPI.getTradingStats(),
-        p2pAPI.getRates()
+        p2pAPI.getRates(),
+        fetchMarketRates()
       ])
 
       if (profileRes.status === 'fulfilled') {
@@ -60,6 +80,10 @@ export default function DashboardPage() {
 
       if (ratesRes.status === 'fulfilled') {
         setRates(ratesRes.value.data)
+      }
+
+      if (marketRatesRes.status === 'fulfilled') {
+        setMarketRates(marketRatesRes.value)
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
@@ -273,34 +297,89 @@ export default function DashboardPage() {
           <div className="space-y-6">
             {/* Market Rates */}
             <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Tasas de Mercado</h3>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Tasas de Mercado</h3>
+                  <p className="text-xs text-gray-600 flex items-center mt-1">
+                    <span className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></span>
+                    Binance P2P Bolivia
+                  </p>
+                </div>
+                {marketRates && (
+                  <span className="text-xs text-gray-500">
+                    {new Date(marketRates.lastUpdated).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
               <div className="space-y-3">
-                {Object.entries(rates).slice(0, 3).map(([pair, rate]) => {
-                  const isUp = Math.random() > 0.5
+                {marketRates ? [
+                  { 
+                    fromCurrency: 'USD',
+                    toCurrency: 'BOB',
+                    rate: marketRates.USD_BOB,
+                    title: 'Dólar Paralelo',
+                    icon: '💵',
+                    priority: true
+                  },
+                  { 
+                    fromCurrency: 'USDT',
+                    toCurrency: 'BOB',
+                    rate: marketRates.USDT_BOB,
+                    title: 'Tether',
+                    icon: '₮',
+                    priority: false
+                  }
+                ].map(({ fromCurrency, toCurrency, rate, title, icon, priority }) => {
+                  const { isUp } = getRateChange()
                   return (
-                    <div key={pair} className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-900">
-                        {pair.replace('_', '/')}
-                      </span>
-                      <div className="flex items-center">
-                        <span className="text-sm text-gray-600 mr-2">
-                          {(() => {
-                            if (typeof rate === 'object' && rate !== null) {
-                              const sellPrice = rate.best_sell || rate.best_buy || 0;
-                              return parseFloat(String(sellPrice)).toFixed(4);
-                            }
-                            return parseFloat(String(rate || 0)).toFixed(4);
-                          })()}
-                        </span>
-                        {isUp ? (
-                          <ArrowUpIcon className="w-4 h-4 text-success-500" />
-                        ) : (
-                          <ArrowDownIcon className="w-4 h-4 text-danger-500" />
-                        )}
+                    <div key={`${fromCurrency}-${toCurrency}`} className={`rounded-lg p-3 ${priority ? 'bg-green-50 border border-green-200' : 'bg-gray-50'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center">
+                          <span className="text-lg mr-2">{icon}</span>
+                          <span className="text-sm font-semibold text-gray-900">
+                            {title}
+                          </span>
+                          {priority && (
+                            <span className="ml-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                              Principal
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center">
+                          {isUp ? (
+                            <ArrowUpIcon className="w-4 h-4 text-success-500" />
+                          ) : (
+                            <ArrowDownIcon className="w-4 h-4 text-danger-500" />
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="mb-2">
+                        <p className={`text-lg font-bold ${priority ? 'text-green-700' : 'text-primary-600'}`}>
+                          {formatIntuitiveRate(fromCurrency, toCurrency, rate)}
+                        </p>
+                      </div>
+                      
+                      <div className={`text-center py-1 px-2 rounded ${priority ? 'bg-white' : 'bg-white'}`}>
+                        <p className="text-xs text-gray-500 font-medium">
+                          {getConversionExample(fromCurrency, toCurrency, rate)}
+                        </p>
                       </div>
                     </div>
                   )
-                })}
+                }) : (
+                  <div className="space-y-3">
+                    {['BOB/USD', 'BOB/USDT', 'USDT/BOB'].map((pair) => (
+                      <div key={pair} className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-900">{pair}</span>
+                        <div className="flex items-center">
+                          <span className="text-sm text-gray-400 mr-2">Cargando...</span>
+                          <div className="w-4 h-4 bg-gray-200 rounded animate-pulse"></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -315,7 +394,7 @@ export default function DashboardPage() {
                 <Link href="/trade" className="btn-secondary w-full">
                   Explorar Órdenes
                 </Link>
-                <Link href="/wallet/deposit" className="btn-secondary w-full">
+                <Link href="/wallet" className="btn-secondary w-full">
                   Depositar Fondos
                 </Link>
               </div>

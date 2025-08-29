@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRequireAuth } from '../../lib/auth'
 import { p2pAPI, Order } from '../../lib/api'
+import { fetchMarketRates, MarketRates, formatRate, getRateChange, formatIntuitiveRate, getConversionExample } from '../../lib/marketRates'
 import DashboardLayout from '../../components/DashboardLayout'
 import OrderDetailsModal from '../../components/p2p/OrderDetailsModal'
 import Link from 'next/link'
@@ -19,6 +20,7 @@ export default function TradePage() {
   const { user } = useRequireAuth()
   const [orders, setOrders] = useState<Order[]>([])
   const [rates, setRates] = useState<Record<string, any>>({})
+  const [marketRates, setMarketRates] = useState<MarketRates | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   
   // Filter states
@@ -41,6 +43,23 @@ export default function TradePage() {
     }
   }, [user, filters])
 
+  // Auto-refresh market rates every 2 minutes
+  useEffect(() => {
+    const refreshRates = async () => {
+      try {
+        const newRates = await fetchMarketRates()
+        setMarketRates(newRates)
+      } catch (error) {
+        console.error('Failed to refresh market rates:', error)
+      }
+    }
+
+    // Set up interval for market rates refresh
+    const interval = setInterval(refreshRates, 2 * 60 * 1000) // 2 minutes
+
+    return () => clearInterval(interval)
+  }, [])
+
   const fetchTradeData = async () => {
     try {
       setIsLoading(true)
@@ -53,9 +72,10 @@ export default function TradePage() {
         limit: 50
       }
       
-      const [ordersRes, ratesRes] = await Promise.allSettled([
+      const [ordersRes, ratesRes, marketRatesRes] = await Promise.allSettled([
         p2pAPI.getOrders(params),
-        p2pAPI.getRates()
+        p2pAPI.getRates(),
+        fetchMarketRates()
       ])
 
       if (ordersRes.status === 'fulfilled') {
@@ -64,6 +84,10 @@ export default function TradePage() {
 
       if (ratesRes.status === 'fulfilled') {
         setRates(ratesRes.value.data)
+      }
+
+      if (marketRatesRes.status === 'fulfilled') {
+        setMarketRates(marketRatesRes.value)
       }
     } catch (error) {
       console.error('Error fetching trade data:', error)
@@ -181,38 +205,105 @@ export default function TradePage() {
 
         {/* Market Rates Card */}
         <div className="card">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Tasas de Mercado</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Tasas de Mercado en Tiempo Real</h3>
+              <p className="text-xs text-gray-600 flex items-center mt-1">
+                <span className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></span>
+                Datos reales de Binance P2P Bolivia
+              </p>
+            </div>
+            {marketRates && (
+              <div className="text-right">
+                <span className="text-xs text-gray-500">
+                  Actualizado: {new Date(marketRates.lastUpdated).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {Object.entries(rates).slice(0, 3).map(([pair, rate]) => {
-              const isUp = Math.random() > 0.5
+            {marketRates ? [
+              { 
+                fromCurrency: 'USD',
+                toCurrency: 'BOB', 
+                rate: marketRates.USD_BOB, 
+                title: 'Dólar Paralelo Bolivia',
+                subtitle: 'Binance P2P - Precio real',
+                icon: '💵🇧🇴',
+                highlight: true
+              },
+              { 
+                fromCurrency: 'USDT',
+                toCurrency: 'BOB', 
+                rate: marketRates.USDT_BOB, 
+                title: 'Tether a Bolivianos', 
+                subtitle: 'Binance P2P - Real',
+                icon: '₮🇧🇴',
+                highlight: false
+              },
+              { 
+                fromCurrency: 'USD',
+                toCurrency: 'USDT', 
+                rate: marketRates.USD_USDT, 
+                title: 'Dólar a Tether',
+                subtitle: 'Conversión USD-USDT',
+                icon: '💵₮',
+                highlight: false
+              }
+            ].map(({ fromCurrency, toCurrency, rate, title, subtitle, icon, highlight }) => {
+              const { isUp, change } = getRateChange()
               return (
-                <div key={pair} className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        {pair.replace('_', '/')}
-                      </p>
-                      <p className="text-lg font-bold text-gray-900">
-                        {(() => {
-                          if (typeof rate === 'object' && rate !== null) {
-                            const sellPrice = rate.best_sell || rate.best_buy || 0;
-                            return parseFloat(String(sellPrice)).toFixed(4);
-                          }
-                          return parseFloat(String(rate || 0)).toFixed(4);
-                        })()}
-                      </p>
-                    </div>
-                    <div className="flex items-center">
+                <div key={`${fromCurrency}-${toCurrency}`} className={`bg-white rounded-lg p-4 border-2 hover:shadow-md transition-all ${highlight ? 'border-green-300 bg-green-50' : 'border-gray-200 hover:border-primary-200'}`}>
+                  <div className="text-center mb-3">
+                    <div className="text-3xl mb-2">{icon}</div>
+                    <p className="text-sm font-bold text-gray-900">{title}</p>
+                    <p className="text-xs text-gray-600">{subtitle}</p>
+                    {highlight && (
+                      <span className="inline-block bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded-full mt-1">
+                        🚀 Más usado
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="text-center mb-3">
+                    <p className={`text-xl font-bold mb-1 ${highlight ? 'text-green-600' : 'text-primary-600'}`}>
+                      {formatIntuitiveRate(fromCurrency, toCurrency, rate)}
+                    </p>
+                    <div className="flex items-center justify-center space-x-1">
                       {isUp ? (
-                        <ArrowUpIcon className="w-5 h-5 text-success-500" />
+                        <ArrowUpIcon className="w-4 h-4 text-success-500" />
                       ) : (
-                        <ArrowDownIcon className="w-5 h-5 text-danger-500" />
+                        <ArrowDownIcon className="w-4 h-4 text-danger-500" />
                       )}
+                      <span className={`text-xs font-medium ${isUp ? 'text-success-600' : 'text-danger-600'}`}>
+                        {isUp ? '+' : ''}{(change * 100).toFixed(2)}%
+                      </span>
                     </div>
+                  </div>
+
+                  <div className={`rounded-md p-3 text-center ${highlight ? 'bg-white border border-green-200' : 'bg-gray-50'}`}>
+                    <p className="text-xs text-gray-600 font-medium">Ejemplo:</p>
+                    <p className="text-sm font-bold text-gray-800">
+                      {getConversionExample(fromCurrency, toCurrency, rate)}
+                    </p>
                   </div>
                 </div>
               )
-            })}
+            }) : (
+              // Loading state
+              [1, 2, 3].map((i) => (
+                <div key={i} className="bg-gray-50 rounded-lg p-4 border">
+                  <div className="animate-pulse">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="h-4 bg-gray-300 rounded w-16"></div>
+                      <div className="h-3 bg-gray-300 rounded w-8"></div>
+                    </div>
+                    <div className="h-6 bg-gray-300 rounded w-20 mb-2"></div>
+                    <div className="h-3 bg-gray-300 rounded w-24"></div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

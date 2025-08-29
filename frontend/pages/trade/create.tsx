@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { useRequireAuth } from '../../lib/auth'
 import { p2pAPI, walletAPI, WalletBalance } from '../../lib/api'
+import { fetchMarketRates, MarketRates, formatRate, getRateForPair } from '../../lib/marketRates'
 import DashboardLayout from '../../components/DashboardLayout'
 import { 
   ArrowLeftIcon,
@@ -16,6 +17,7 @@ export default function CreateOrderPage() {
   const { user } = useRequireAuth()
   const router = useRouter()
   const [wallets, setWallets] = useState<WalletBalance[]>([])
+  const [marketRates, setMarketRates] = useState<MarketRates | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingWallets, setIsLoadingWallets] = useState(true)
   
@@ -39,8 +41,18 @@ export default function CreateOrderPage() {
   useEffect(() => {
     if (user) {
       fetchWallets()
+      fetchMarketData()
     }
   }, [user])
+
+  const fetchMarketData = async () => {
+    try {
+      const rates = await fetchMarketRates()
+      setMarketRates(rates)
+    } catch (error) {
+      console.error('Error fetching market rates:', error)
+    }
+  }
 
   const fetchWallets = async () => {
     try {
@@ -226,6 +238,18 @@ export default function CreateOrderPage() {
     return wallet ? (typeof wallet.balance === 'string' ? parseFloat(wallet.balance) : wallet.balance) - (typeof wallet.locked_balance === 'string' ? parseFloat(wallet.locked_balance) : wallet.locked_balance) : 0
   }
 
+  const getMarketRate = () => {
+    if (!marketRates || !formData.currency_from || !formData.currency_to) return null
+    return getRateForPair(marketRates, formData.currency_from, formData.currency_to)
+  }
+
+  const useMarketRate = () => {
+    const rate = getMarketRate()
+    if (rate) {
+      setFormData(prev => ({ ...prev, rate: rate.toString() }))
+    }
+  }
+
   if (isLoadingWallets) {
     return (
       <DashboardLayout>
@@ -328,6 +352,50 @@ export default function CreateOrderPage() {
               </div>
             </div>
 
+            {/* Market Rate Reference */}
+            {marketRates && formData.currency_from && formData.currency_to && getMarketRate() && (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center mb-2">
+                      <span className="text-2xl mr-2">💡</span>
+                      <h4 className="text-sm font-medium text-blue-800">Tasa de Binance P2P Bolivia</h4>
+                    </div>
+                    <p className="text-2xl font-bold text-blue-900 mb-2">
+                      {formatRate(getMarketRate()!)}
+                    </p>
+                    <div className="bg-white rounded-md p-2 mb-2">
+                      <p className="text-xs text-gray-600 font-medium">Significa que:</p>
+                      <p className="text-sm font-semibold text-gray-800">
+                        {formData.currency_from === 'BOB' && formData.currency_to === 'USD' && 
+                          `100 BOB → $${(100 * getMarketRate()!).toFixed(2)} USD`}
+                        {formData.currency_from === 'USD' && formData.currency_to === 'BOB' && 
+                          `$1 USD → ${getMarketRate()!.toFixed(2)} BOB`}
+                        {formData.currency_from === 'USDT' && formData.currency_to === 'BOB' && 
+                          `1 USDT → ${getMarketRate()!.toFixed(2)} BOB`}
+                        {formData.currency_from === 'BOB' && formData.currency_to === 'USDT' && 
+                          `100 BOB → ${(100 * getMarketRate()!).toFixed(2)} USDT`}
+                        {formData.currency_from === 'USD' && formData.currency_to === 'USDT' && 
+                          `$1 USD → ${getMarketRate()!.toFixed(4)} USDT`}
+                        {formData.currency_from === 'USDT' && formData.currency_to === 'USD' && 
+                          `1 USDT → $${getMarketRate()!.toFixed(4)} USD`}
+                      </p>
+                    </div>
+                    <p className="text-xs text-blue-600">
+                      ⏰ Actualizado: {new Date(marketRates.lastUpdated).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={useMarketRate}
+                    className="btn-primary text-sm px-4 py-2 ml-4 whitespace-nowrap"
+                  >
+                    ✨ Usar Esta Tasa
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Amount and Rate */}
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -349,9 +417,20 @@ export default function CreateOrderPage() {
               </div>
 
               <div>
-                <label htmlFor="rate" className="block text-sm font-medium text-gray-700 mb-2">
-                  Tasa ({formData.currency_to || 'Moneda'})
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label htmlFor="rate" className="block text-sm font-medium text-gray-700">
+                    Tasa ({formData.currency_to || 'Moneda'})
+                  </label>
+                  {getMarketRate() && (
+                    <button
+                      type="button"
+                      onClick={useMarketRate}
+                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                    >
+                      Usar tasa de mercado
+                    </button>
+                  )}
+                </div>
                 <input
                   id="rate"
                   name="rate"
@@ -364,6 +443,11 @@ export default function CreateOrderPage() {
                   onChange={handleInputChange}
                   required
                 />
+                {getMarketRate() && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Mercado: {formatRate(getMarketRate()!)}
+                  </p>
+                )}
               </div>
             </div>
 
