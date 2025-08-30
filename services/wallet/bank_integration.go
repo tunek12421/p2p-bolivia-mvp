@@ -583,7 +583,7 @@ func (bi *BankIntegration) GetDepositInstructions(userID, currency string, amoun
 	// Get bank account for deposits
 	var bankAccount, bankName, accountHolder string
 	err := bi.db.QueryRow(`
-		SELECT account_number, bank_name, account_holder 
+		SELECT account_number, bank, account_holder 
 		FROM deposit_accounts 
 		WHERE currency = $1 AND is_active = true 
 		LIMIT 1

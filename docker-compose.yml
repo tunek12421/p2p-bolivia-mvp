@@ -19,6 +19,8 @@ services:
       - CHAT_SERVICE_URL=http://chat-service:3007
       - ANALYTICS_SERVICE_URL=http://analytics-service:3008
       - REDIS_URL=redis:6379
+    volumes:
+      - static_files:/tmp/uploads
     depends_on:
       - auth
       - p2p
@@ -110,6 +112,8 @@ services:
       - BANK_LISTENER_URL=http://python-listener:8000
       - BASE_URL=${BASE_URL:-http://localhost:8080}
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+    volumes:
+      - static_files:/tmp/uploads
     depends_on:
       - postgres
       - redis
@@ -125,7 +129,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NEXT_PUBLIC_API_URL=http://gateway:8080
     depends_on:
       - gateway
     networks:
@@ -359,3 +363,4 @@ volumes:
   redis_data:
   rabbitmq_data:
   minio_data:
+  static_files:

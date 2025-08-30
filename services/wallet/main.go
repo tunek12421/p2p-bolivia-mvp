@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -111,7 +114,16 @@ func (s *Server) setupRoutes() {
 		
 		// Bank integration endpoints
 		api.GET("/deposit-instructions/:currency", s.authMiddleware(), s.handleGetDepositInstructions)
+		api.GET("/deposit-qr/:currency", s.authMiddleware(), s.handleGetDepositQR)
 		api.GET("/pending-deposits", s.authMiddleware(), s.handleGetPendingDeposits)
+		
+		// Admin endpoints for QR management
+		admin := api.Group("/admin", s.authMiddleware(), s.adminMiddleware())
+		{
+			admin.GET("/deposit-qr", s.handleAdminGetAllQR)
+			admin.POST("/deposit-qr", s.handleAdminUploadQR)
+			admin.DELETE("/deposit-qr/:id", s.handleAdminDeleteQR)
+		}
 		
 		// Payment integration webhooks (Bolivia only)
 		api.POST("/webhooks/bank", s.handleBankWebhook)
@@ -359,6 +371,42 @@ func (s *Server) handleGetDepositInstructions(c *gin.Context) {
 	})
 }
 
+func (s *Server) handleGetDepositQR(c *gin.Context) {
+	currency := c.Param("currency")
+	
+	// Get QR code from database
+	var qrImageURL, qrDescription string
+	var amountFixed sql.NullFloat64
+	
+	err := s.db.QueryRow(`
+		SELECT qr_image_url, qr_description, amount_fixed
+		FROM deposit_qr_codes 
+		WHERE currency = $1 AND is_active = true 
+		LIMIT 1
+	`, currency).Scan(&qrImageURL, &qrDescription, &amountFixed)
+	
+	if err != nil {
+		c.JSON(404, gin.H{"error": "No QR code available for " + currency})
+		return
+	}
+	
+	response := gin.H{
+		"currency":    currency,
+		"qr_image_url": qrImageURL,
+		"description": qrDescription,
+		"method":      "QR",
+	}
+	
+	if amountFixed.Valid {
+		response["amount_fixed"] = amountFixed.Float64
+	}
+	
+	c.JSON(200, gin.H{
+		"status": "success",
+		"data":   response,
+	})
+}
+
 func (s *Server) handleGetPendingDeposits(c *gin.Context) {
 	userID := c.GetString("user_id")
 	
@@ -371,6 +419,179 @@ func (s *Server) handleGetPendingDeposits(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"status":           "success",
 		"pending_deposits": deposits,
+	})
+}
+
+// Admin middleware to check if user is admin
+func (s *Server) adminMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetString("user_id")
+		
+		var role string
+		err := s.db.QueryRow("SELECT role FROM users WHERE id = $1", userID).Scan(&role)
+		if err != nil || role != "admin" {
+			c.JSON(403, gin.H{"error": "Admin access required"})
+			c.Abort()
+			return
+		}
+		
+		c.Next()
+	}
+}
+
+// Admin handler to get all QR codes
+func (s *Server) handleAdminGetAllQR(c *gin.Context) {
+	rows, err := s.db.Query(`
+		SELECT id, currency, qr_image_url, qr_description, amount_fixed, is_active, created_at
+		FROM deposit_qr_codes 
+		ORDER BY currency, created_at DESC
+	`)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+	
+	var qrCodes []map[string]interface{}
+	for rows.Next() {
+		var id, currency, qrImageURL, description string
+		var amountFixed sql.NullFloat64
+		var isActive bool
+		var createdAt time.Time
+		
+		err := rows.Scan(&id, &currency, &qrImageURL, &description, &amountFixed, &isActive, &createdAt)
+		if err != nil {
+			continue
+		}
+		
+		qrCode := map[string]interface{}{
+			"id":            id,
+			"currency":      currency,
+			"qr_image_url":  qrImageURL,
+			"description":   description,
+			"is_active":     isActive,
+			"created_at":    createdAt,
+		}
+		
+		if amountFixed.Valid {
+			qrCode["amount_fixed"] = amountFixed.Float64
+		}
+		
+		qrCodes = append(qrCodes, qrCode)
+	}
+	
+	c.JSON(200, gin.H{
+		"status": "success",
+		"data":   qrCodes,
+	})
+}
+
+// Admin handler to upload new QR
+func (s *Server) handleAdminUploadQR(c *gin.Context) {
+	currency := c.PostForm("currency")
+	description := c.PostForm("description")
+	
+	if currency == "" {
+		c.JSON(400, gin.H{"error": "Currency is required"})
+		return
+	}
+	
+	// Handle file upload
+	file, err := c.FormFile("qr_image")
+	if err != nil {
+		c.JSON(400, gin.H{"error": "QR image file is required"})
+		return
+	}
+	
+	// Validate file type
+	if !strings.HasPrefix(file.Header.Get("Content-Type"), "image/") {
+		c.JSON(400, gin.H{"error": "File must be an image"})
+		return
+	}
+	
+	// Save file (in production, you'd save to cloud storage)
+	filename := fmt.Sprintf("qr_%s_%d%s", 
+		strings.ToLower(currency), 
+		time.Now().Unix(), 
+		filepath.Ext(file.Filename))
+	
+	uploadPath := "/tmp/uploads/" + filename
+	
+	// Create upload directory if it doesn't exist
+	os.MkdirAll("/tmp/uploads", 0755)
+	
+	if err := c.SaveUploadedFile(file, uploadPath); err != nil {
+		c.JSON(500, gin.H{"error": "Failed to save file"})
+		return
+	}
+	
+	// In production, you'd upload to cloud storage and get public URL
+	publicURL := "/uploads/" + filename
+	
+	if description == "" {
+		description = fmt.Sprintf("Escanea este QR para depositar %s", currency)
+	}
+	
+	// Deactivate existing QR for this currency
+	_, err = s.db.Exec(`
+		UPDATE deposit_qr_codes 
+		SET is_active = FALSE 
+		WHERE currency = $1 AND is_active = TRUE
+	`, currency)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "Failed to update existing QR codes"})
+		return
+	}
+	
+	// Insert new QR code
+	userID := c.GetString("user_id")
+	var qrID string
+	err = s.db.QueryRow(`
+		INSERT INTO deposit_qr_codes (currency, qr_image_url, qr_description, created_by)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`, currency, publicURL, description, userID).Scan(&qrID)
+	
+	if err != nil {
+		c.JSON(500, gin.H{"error": "Failed to save QR code"})
+		return
+	}
+	
+	c.JSON(200, gin.H{
+		"status":  "success",
+		"message": "QR code uploaded successfully",
+		"data": gin.H{
+			"id":           qrID,
+			"currency":     currency,
+			"qr_image_url": publicURL,
+			"description":  description,
+		},
+	})
+}
+
+// Admin handler to delete QR
+func (s *Server) handleAdminDeleteQR(c *gin.Context) {
+	qrID := c.Param("id")
+	
+	result, err := s.db.Exec(`
+		DELETE FROM deposit_qr_codes 
+		WHERE id = $1
+	`, qrID)
+	
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(404, gin.H{"error": "QR code not found"})
+		return
+	}
+	
+	c.JSON(200, gin.H{
+		"status":  "success",
+		"message": "QR code deleted successfully",
 	})
 }
 

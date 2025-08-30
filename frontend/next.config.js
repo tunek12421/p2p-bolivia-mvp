@@ -47,7 +47,7 @@ const nextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https:",
+              "img-src 'self' data: https: blob:",
               "font-src 'self'",
               "connect-src 'self' http://localhost:* ws://localhost:*",
               "frame-ancestors 'none'",
@@ -67,9 +67,11 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: process.env.NEXT_PUBLIC_API_URL 
-          ? `${process.env.NEXT_PUBLIC_API_URL}/api/:path*`
-          : 'http://gateway:8080/api/:path*',
+        destination: 'http://gateway:8080/api/:path*',
+      },
+      {
+        source: '/uploads/:path*',
+        destination: 'http://gateway:8080/uploads/:path*',
       },
     ]
   },

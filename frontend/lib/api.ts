@@ -198,6 +198,9 @@ export const walletAPI = {
   getDepositInstructions: (currency: string, amount: number) => 
     api.get(`/api/v1/deposit-instructions/${currency}`, { params: { amount } }),
   
+  getDepositQR: (currency: string) => 
+    api.get(`/api/v1/deposit-qr/${currency}`),
+  
   transfer: (data: {
     from_currency: string
     to_currency: string

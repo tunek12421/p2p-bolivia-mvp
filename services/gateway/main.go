@@ -59,7 +59,7 @@ func (g *Gateway) configureServices() {
     // Wallet service
     walletURL, _ := url.Parse(os.Getenv("WALLET_SERVICE_URL"))
     if walletURL == nil {
-        walletURL, _ = url.Parse("http://wallet:3003")
+        walletURL, _ = url.Parse("http://p2p-wallet:3003")
     }
     g.services["wallet"] = walletURL
 
@@ -115,6 +115,10 @@ func (g *Gateway) setupRoutes() {
         })
     })
 
+    // Serve static files (QR images and uploads)
+    g.router.Static("/uploads", "/tmp/uploads")
+    g.router.Static("/images", "/tmp/images")
+
     // API routes
     api := g.router.Group("/api/v1")
     {
@@ -158,6 +162,8 @@ func (g *Gateway) setupRoutes() {
         api.GET("/wallets", g.proxyToService("wallet"))
         api.GET("/wallets/:currency", g.proxyToService("wallet"))
         api.POST("/deposit", g.proxyToService("wallet"))
+        api.GET("/deposit-instructions/:currency", g.proxyToService("wallet"))
+        api.GET("/deposit-qr/:currency", g.proxyToService("wallet"))
         api.POST("/withdraw", g.proxyToService("wallet"))
         api.POST("/transfer", g.proxyToService("wallet"))
         api.GET("/transactions", g.proxyToService("wallet"))
@@ -165,6 +171,11 @@ func (g *Gateway) setupRoutes() {
         api.POST("/webhooks/paypal", g.proxyToService("wallet"))
         api.POST("/webhooks/stripe", g.proxyToService("wallet"))
         api.POST("/webhooks/bank", g.proxyToService("wallet"))
+        
+        // Admin routes
+        api.GET("/admin/deposit-qr", g.proxyToService("wallet"))
+        api.POST("/admin/deposit-qr", g.proxyToService("wallet"))
+        api.DELETE("/admin/deposit-qr/:id", g.proxyToService("wallet"))
 
         // KYC routes
         api.GET("/kyc/status", g.proxyToService("kyc"))

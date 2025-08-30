@@ -45,6 +45,7 @@ type User struct {
     LastName     string    `json:"lastName"`
     IsVerified   bool      `json:"isVerified"`
     KYCLevel     int       `json:"kyc_level"`
+    Role         string    `json:"role"`
     CreatedAt    time.Time `json:"createdAt"`
 }
 
@@ -180,10 +181,10 @@ func (s *Server) handleLogin(c *gin.Context) {
     // Find user by email or phone
     var user User
     err := s.db.QueryRow(`
-        SELECT id, email, COALESCE(phone, '') as phone, password_hash, is_verified, kyc_level
+        SELECT id, email, COALESCE(phone, '') as phone, password_hash, is_verified, kyc_level, COALESCE(role, 'user') as role
         FROM users
         WHERE email = $1 OR COALESCE(phone, '') = $1
-    `, req.Email).Scan(&user.ID, &user.Email, &user.Phone, &user.PasswordHash, &user.IsVerified, &user.KYCLevel)
+    `, req.Email).Scan(&user.ID, &user.Email, &user.Phone, &user.PasswordHash, &user.IsVerified, &user.KYCLevel, &user.Role)
 
     if err != nil {
         log.Printf("❌ LOGIN: User not found for email '%s': %v", req.Email, err)
@@ -331,12 +332,12 @@ func (s *Server) handleGetProfile(c *gin.Context) {
     var firstName, lastName sql.NullString
     
     err := s.db.QueryRow(`
-        SELECT u.id, u.email, COALESCE(u.phone, '') as phone, u.is_verified, u.kyc_level, u.created_at,
+        SELECT u.id, u.email, COALESCE(u.phone, '') as phone, u.is_verified, u.kyc_level, COALESCE(u.role, 'user') as role, u.created_at,
                p.first_name, p.last_name
         FROM users u
         LEFT JOIN user_profiles p ON u.id = p.user_id
         WHERE u.id = $1
-    `, userID).Scan(&user.ID, &user.Email, &user.Phone, &user.IsVerified, &user.KYCLevel, &user.CreatedAt, &firstName, &lastName)
+    `, userID).Scan(&user.ID, &user.Email, &user.Phone, &user.IsVerified, &user.KYCLevel, &user.Role, &user.CreatedAt, &firstName, &lastName)
 
     if err != nil {
         log.Printf("DEBUG: Database query error for user_id '%s': %v", userID, err)
