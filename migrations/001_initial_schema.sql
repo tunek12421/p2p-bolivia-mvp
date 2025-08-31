@@ -204,6 +204,20 @@ CREATE TABLE cashier_order_assignments (
     UNIQUE(order_id, cashier_id)
 );
 
+-- Deposit attempts table for tracking deposit button clicks
+CREATE TABLE deposit_attempts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    amount DECIMAL(20,8) NOT NULL CHECK (amount > 0),
+    currency VARCHAR(10) NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',
+    processed_at TIMESTAMP WITH TIME ZONE,
+    notification_data JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_phone ON users(phone);
@@ -225,6 +239,9 @@ CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
 CREATE INDEX idx_audit_logs_user ON audit_logs(user_id);
 CREATE INDEX idx_cashier_assignments_order ON cashier_order_assignments(order_id);
 CREATE INDEX idx_cashier_assignments_cashier ON cashier_order_assignments(cashier_id);
+CREATE INDEX idx_deposit_attempts_user ON deposit_attempts(user_id);
+CREATE INDEX idx_deposit_attempts_currency ON deposit_attempts(currency);
+CREATE INDEX idx_deposit_attempts_status ON deposit_attempts(status);
 
 -- Updated at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at()

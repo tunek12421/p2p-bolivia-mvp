@@ -177,12 +177,53 @@ export const walletAPI = {
   }) => api.get('/api/v1/transactions', { params }),
   
   getTransaction: (txId: string) => api.get(`/api/v1/transactions/${txId}`),
+
+  // Check if a deposit has been processed
+  checkDepositStatus: (transactionId: string) => {
+    console.log('📡 [API] walletAPI.checkDepositStatus llamado:', { transactionId })
+    const promise = api.get(`/api/v1/transactions/${transactionId}`)
+    promise.then(response => {
+      console.log('✅ [API] walletAPI.checkDepositStatus respuesta exitosa:', {
+        status: response.status,
+        transactionId,
+        transactionStatus: response.data?.status
+      })
+    }).catch(error => {
+      console.error('❌ [API] walletAPI.checkDepositStatus error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        transactionId
+      })
+    })
+    return promise
+  },
   
   deposit: (data: {
     currency: string
     amount: number
     method: 'BANK' | 'QR'
-  }) => api.post('/api/v1/deposit', data),
+    first_name?: string
+    last_name?: string
+  }) => {
+    console.log('📡 [API] walletAPI.deposit llamado:', data)
+    const promise = api.post('/api/v1/deposit', data)
+    promise.then(response => {
+      console.log('✅ [API] walletAPI.deposit respuesta exitosa:', {
+        status: response.status,
+        data: response.data,
+        transactionId: response.data?.transaction_id
+      })
+    }).catch(error => {
+      console.error('❌ [API] walletAPI.deposit error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        requestData: data
+      })
+    })
+    return promise
+  },
   
   withdraw: (data: {
     currency: string
@@ -198,8 +239,25 @@ export const walletAPI = {
   getDepositInstructions: (currency: string, amount: number) => 
     api.get(`/api/v1/deposit-instructions/${currency}`, { params: { amount } }),
   
-  getDepositQR: (currency: string) => 
-    api.get(`/api/v1/deposit-qr/${currency}`),
+  getDepositQR: (currency: string) => {
+    console.log('📡 [API] walletAPI.getDepositQR llamado:', { currency })
+    const promise = api.get(`/api/v1/deposit-qr/${currency}`)
+    promise.then(response => {
+      console.log('✅ [API] walletAPI.getDepositQR respuesta exitosa:', {
+        status: response.status,
+        currency,
+        hasQRData: !!response.data?.data?.qr_image_url
+      })
+    }).catch(error => {
+      console.error('❌ [API] walletAPI.getDepositQR error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        currency
+      })
+    })
+    return promise
+  },
   
   transfer: (data: {
     from_currency: string

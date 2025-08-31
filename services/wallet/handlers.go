@@ -37,9 +37,11 @@ type Transaction struct {
 }
 
 type DepositRequest struct {
-	Currency string  `json:"currency" binding:"required"`
-	Amount   float64 `json:"amount" binding:"required,gt=0"`
-	Method   string  `json:"method" binding:"required,oneof=BANK PAYPAL STRIPE QR"`
+	Currency  string  `json:"currency" binding:"required"`
+	Amount    float64 `json:"amount" binding:"required,gt=0"`
+	Method    string  `json:"method" binding:"required,oneof=BANK PAYPAL STRIPE QR"`
+	FirstName string  `json:"first_name" binding:"required"`
+	LastName  string  `json:"last_name" binding:"required"`
 }
 
 type WithdrawalRequest struct {
@@ -227,8 +229,11 @@ func (s *Server) handleGetTransactions(c *gin.Context) {
 }
 
 func (s *Server) handleDeposit(c *gin.Context) {
+	fmt.Printf("🚀 [WALLET-BACKEND] handleDeposit iniciado\n")
+	
 	var req DepositRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("❌ [WALLET-BACKEND] Error binding JSON: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -237,7 +242,26 @@ func (s *Server) handleDeposit(c *gin.Context) {
 	amount := decimal.NewFromFloat(req.Amount)
 	currency := strings.ToUpper(req.Currency)
 	
+	fmt.Printf("📊 [WALLET-BACKEND] Datos recibidos: userID=%s, currency=%s, amount=%s, method=%s, firstName=%s, lastName=%s\n", 
+		userID, currency, amount.String(), req.Method, req.FirstName, req.LastName)
+	
+	// Record deposit attempt
+	fmt.Printf("💾 [WALLET-BACKEND] Insertando en deposit_attempts...\n")
+	_, err := s.db.Exec(`
+		INSERT INTO deposit_attempts (user_id, first_name, last_name, amount, currency, created_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+	`, userID, req.FirstName, req.LastName, amount, currency)
+	
+	if err != nil {
+		fmt.Printf("❌ [WALLET-BACKEND] Error recording deposit attempt: %v\n", err)
+		// Continue with deposit even if logging fails
+	} else {
+		fmt.Printf("✅ [WALLET-BACKEND] Deposit attempt registrado exitosamente: user=%s, name=%s %s, amount=%s %s\n", 
+			userID, req.FirstName, req.LastName, amount.String(), currency)
+	}
+	
 	// Create transaction record
+	fmt.Printf("🆔 [WALLET-BACKEND] Generando transaction ID...\n")
 	txID := s.generateTxID()
 	tx := Transaction{
 		ID:        txID,
@@ -251,30 +275,41 @@ func (s *Server) handleDeposit(c *gin.Context) {
 		UpdatedAt: time.Now(),
 	}
 	
+	fmt.Printf("📝 [WALLET-BACKEND] Creando transacción: ID=%s, UserID=%s, Type=%s, Currency=%s, Amount=%s, Status=%s, Method=%s\n",
+		tx.ID, tx.UserID, tx.Type, tx.Currency, tx.Amount.String(), tx.Status, tx.Method)
+	
 	// Insert transaction (using both old and new fields for compatibility)
-	_, err := s.db.Exec(`
+	fmt.Printf("💾 [WALLET-BACKEND] Insertando transaction en base de datos...\n")
+	_, err = s.db.Exec(`
 		INSERT INTO transactions (id, user_id, from_user_id, type, transaction_type, currency, amount, status, method, payment_method, external_ref, created_at, updated_at)
 		VALUES ($1, $2, $2, $3, $3, $4, $5, $6, $7, $7, '', $8, $9)
 	`, tx.ID, tx.UserID, tx.Type, tx.Currency, tx.Amount, tx.Status, tx.Method, tx.CreatedAt, tx.UpdatedAt)
 	
 	if err != nil {
-		fmt.Printf("Error creating deposit transaction: %v\n", err)
+		fmt.Printf("❌ [WALLET-BACKEND] Error creating deposit transaction: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create deposit", "details": err.Error()})
 		return
 	}
 	
+	fmt.Printf("✅ [WALLET-BACKEND] Transaction creada exitosamente: ID=%s\n", tx.ID)
+	
 	// Process based on method
+	fmt.Printf("🔄 [WALLET-BACKEND] Procesando método de pago: %s\n", req.Method)
 	var response gin.H
 	switch req.Method {
 	case "QR":
+		fmt.Printf("📱 [WALLET-BACKEND] Procesando QR deposit...\n")
 		response = s.processQRDeposit(tx)
 	case "BANK":
+		fmt.Printf("🏦 [WALLET-BACKEND] Procesando bank deposit...\n")
 		response = s.processBankDeposit(tx)
 	default:
+		fmt.Printf("❌ [WALLET-BACKEND] Método de pago no válido: %s\n", req.Method)
 		response = gin.H{"error": "Payment method not available in Bolivia. Use BANK or QR instead."}
 	}
 	
 	response["transaction_id"] = txID
+	fmt.Printf("🎉 [WALLET-BACKEND] Enviando respuesta exitosa: txID=%s, method=%s\n", txID, req.Method)
 	c.JSON(http.StatusOK, response)
 }
 

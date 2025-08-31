@@ -139,7 +139,7 @@ services:
   # Python Bank Listener Service
   python-listener:
     build: 
-      context: ./python-listener
+      context: ./listener
       dockerfile: Dockerfile
     container_name: p2p-python-listener
     ports:
@@ -148,7 +148,7 @@ services:
       - PORT=8000
       - HOST=0.0.0.0
     volumes:
-      - ./python-listener/notifications.json:/app/notifications.json
+      - ./listener/notifications.json:/app/notifications.json
     networks:
       - p2p-network
     restart: unless-stopped

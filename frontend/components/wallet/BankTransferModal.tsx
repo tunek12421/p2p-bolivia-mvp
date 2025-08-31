@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import { Fragment } from 'react'
 import { XMarkIcon, BanknotesIcon, ClockIcon, CheckCircleIcon, DocumentDuplicateIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline'
@@ -48,6 +48,12 @@ export default function BankTransferModal({
     bank: '',
     account_number: ''
   })
+  const [userDetails, setUserDetails] = useState({
+    first_name: '',
+    last_name: ''
+  })
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false)
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const getCurrencySymbol = (curr: string) => {
     switch (curr) {
@@ -57,45 +63,165 @@ export default function BankTransferModal({
     }
   }
 
+  const checkDepositStatus = async () => {
+    if (!transactionId || isCheckingPayment) return
+    
+    try {
+      setIsCheckingPayment(true)
+      console.log('🔍 [BankTransferModal] Verificando estado del depósito:', { transactionId })
+      
+      const response = await walletAPI.checkDepositStatus(transactionId)
+      const transaction = response.data
+      
+      console.log('📊 [BankTransferModal] Estado del depósito:', {
+        transactionId,
+        status: transaction.status,
+        type: transaction.type
+      })
+      
+      // Si la transacción está completada, cerrar modal completamente
+      if (transaction.status === 'COMPLETED' || transaction.status === 'completed') {
+        console.log('🎉 [BankTransferModal] ¡Depósito confirmado! Cerrando modal automáticamente')
+        
+        // Limpiar el polling
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current)
+          pollingIntervalRef.current = null
+        }
+        
+        // Mostrar mensaje de éxito
+        toast.success('¡Pago confirmado! Tu depósito ha sido procesado exitosamente.')
+        
+        // Llamar onSuccess para actualizar la billetera en el componente padre
+        onSuccess()
+        
+        // Cerrar el modal completamente después de un pequeño delay para que se vea el toast
+        setTimeout(() => {
+          handleClose()
+        }, 1500)
+      }
+    } catch (error: any) {
+      console.log('⚠️ [BankTransferModal] Error verificando depósito (normal si aún no se procesa):', {
+        transactionId,
+        error: error.message
+      })
+      // No mostrar error al usuario, es normal que falle hasta que se procese
+    } finally {
+      setIsCheckingPayment(false)
+    }
+  }
+
+  // Effect para manejar el polling cuando está en instructions
+  useEffect(() => {
+    if (step === 'instructions' && transactionId && type === 'deposit') {
+      console.log('🔄 [BankTransferModal] Iniciando polling para verificar depósito:', { transactionId })
+      
+      // Verificar inmediatamente
+      checkDepositStatus()
+      
+      // Configurar polling cada 3 segundos
+      pollingIntervalRef.current = setInterval(() => {
+        checkDepositStatus()
+      }, 3000)
+      
+      return () => {
+        if (pollingIntervalRef.current) {
+          console.log('🛑 [BankTransferModal] Deteniendo polling')
+          clearInterval(pollingIntervalRef.current)
+          pollingIntervalRef.current = null
+        }
+      }
+    } else {
+      // Limpiar polling si no estamos en instructions
+      if (pollingIntervalRef.current) {
+        console.log('🛑 [BankTransferModal] Limpiando polling (cambió el step)')
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+    }
+  }, [step, transactionId, type])
+
+  // Limpiar polling al desmontar el componente
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+      }
+    }
+  }, [])
+
   const handleAmountSubmit = async () => {
+    console.log('🚀 [BankTransferModal] handleAmountSubmit iniciado', {
+      type,
+      currency,
+      amount,
+      userDetails,
+      withdrawalDestination: type === 'withdrawal' ? withdrawalDestination : 'N/A'
+    })
+    
     const amountNum = parseFloat(amount)
     
     if (!amountNum || amountNum <= 0) {
+      console.log('❌ [BankTransferModal] Validación fallida: monto inválido', { amount, amountNum })
       toast.error('Ingresa un monto válido')
       return
     }
 
     if (currency === 'BOB' && amountNum < 10) {
+      console.log('❌ [BankTransferModal] Validación fallida: monto mínimo BOB', { currency, amountNum, minimo: 10 })
       toast.error('El monto mínimo es Bs. 10.00')
       return
     }
 
     if (currency === 'USD' && amountNum < 5) {
+      console.log('❌ [BankTransferModal] Validación fallida: monto mínimo USD', { currency, amountNum, minimo: 5 })
       toast.error('El monto mínimo es $5.00')
       return
     }
 
     if (type === 'withdrawal' && amountNum > availableBalance) {
+      console.log('❌ [BankTransferModal] Validación fallida: balance insuficiente', { amountNum, availableBalance })
       toast.error('Monto excede el balance disponible')
       return
     }
 
+    if (type === 'deposit') {
+      if (!userDetails.first_name || !userDetails.last_name) {
+        console.log('❌ [BankTransferModal] Validación fallida: datos personales incompletos', userDetails)
+        toast.error('Completa tu nombre y apellido')
+        return
+      }
+      console.log('✅ [BankTransferModal] Validaciones de depósito aprobadas', userDetails)
+    }
+
     if (type === 'withdrawal') {
       if (!withdrawalDestination.account_holder || !withdrawalDestination.bank || !withdrawalDestination.account_number) {
+        console.log('❌ [BankTransferModal] Validación fallida: datos de destino incompletos', withdrawalDestination)
         toast.error('Completa todos los campos de destino')
         return
       }
+      console.log('✅ [BankTransferModal] Validaciones de retiro aprobadas', withdrawalDestination)
     }
 
+    console.log('⏳ [BankTransferModal] Iniciando proceso, setIsLoading(true)')
     setIsLoading(true)
 
     try {
       if (type === 'deposit') {
+        console.log('💰 [BankTransferModal] Procesando depósito - obteniendo QR', { currency })
         // Get QR deposit instructions
         const response = await walletAPI.getDepositQR(currency)
+        console.log('✅ [BankTransferModal] QR obtenido exitosamente', response.data)
         setQRDetails(response.data.data)
+        
+        // También registrar el intento de depósito
+        console.log('💾 [BankTransferModal] Registrando intento de depósito...')
+        await handleDepositConfirmation()
+        
         setStep('instructions')
+        console.log('📱 [BankTransferModal] Cambiando a step: instructions')
       } else {
+        console.log('💸 [BankTransferModal] Procesando retiro', { currency, amountNum, destination: withdrawalDestination })
         // Create withdrawal
         const response = await walletAPI.withdraw({
           currency,
@@ -103,31 +229,75 @@ export default function BankTransferModal({
           method: 'BANK',
           destination: withdrawalDestination
         })
+        console.log('✅ [BankTransferModal] Retiro creado exitosamente', { transactionId: response.data.transaction_id })
         setTransactionId(response.data.transaction_id)
         setStep('confirmation')
+        console.log('📋 [BankTransferModal] Cambiando a step: confirmation')
       }
     } catch (error: any) {
-      console.error('Bank transfer error:', error)
+      console.error('❌ [BankTransferModal] Error en handleAmountSubmit:', {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        type,
+        currency,
+        amount: amountNum
+      })
       toast.error(error.response?.data?.error || 'Error al procesar la solicitud')
     } finally {
+      console.log('🏁 [BankTransferModal] Finalizando proceso, setIsLoading(false)')
       setIsLoading(false)
     }
   }
 
   const handleDepositConfirmation = async () => {
+    console.log('🏦 [BankTransferModal] handleDepositConfirmation iniciado', {
+      currency,
+      amount,
+      userDetails,
+      step: 'confirmation'
+    })
+    
     setIsLoading(true)
     try {
-      const response = await walletAPI.deposit({
+      const depositData = {
         currency,
         amount: parseFloat(amount),
-        method: 'BANK'
+        method: 'BANK' as const,
+        first_name: userDetails.first_name,
+        last_name: userDetails.last_name
+      }
+      
+      console.log('📤 [BankTransferModal] Enviando solicitud de depósito al backend:', depositData)
+      
+      const response = await walletAPI.deposit(depositData)
+      
+      console.log('✅ [BankTransferModal] Respuesta de depósito exitosa:', {
+        transactionId: response.data.transaction_id,
+        fullResponse: response.data
       })
+      
       setTransactionId(response.data.transaction_id)
       setStep('confirmation')
       toast.success('Depósito iniciado. Realiza la transferencia para completarlo.')
+      
+      console.log('🎉 [BankTransferModal] Depósito completado, cambiando a step: confirmation')
     } catch (error: any) {
+      console.error('❌ [BankTransferModal] Error en handleDepositConfirmation:', {
+        error: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        depositData: {
+          currency,
+          amount: parseFloat(amount),
+          method: 'BANK',
+          first_name: userDetails.first_name,
+          last_name: userDetails.last_name
+        }
+      })
       toast.error(error.response?.data?.error || 'Error al crear el depósito')
     } finally {
+      console.log('🔚 [BankTransferModal] handleDepositConfirmation finalizado, setIsLoading(false)')
       setIsLoading(false)
     }
   }
@@ -160,12 +330,20 @@ export default function BankTransferModal({
   }
 
   const handleClose = () => {
+    // Limpiar polling
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
+    }
+    
     setStep('amount')
     setAmount('')
     setBankDetails(null)
     setQRDetails(null)
     setTransactionId('')
     setWithdrawalDestination({ account_holder: '', bank: '', account_number: '' })
+    setUserDetails({ first_name: '', last_name: '' })
+    setIsCheckingPayment(false)
     onClose()
   }
 
@@ -241,6 +419,44 @@ export default function BankTransferModal({
                         {type === 'withdrawal' && ` | Disponible: ${getCurrencySymbol(currency)}${availableBalance.toFixed(2)}`}
                       </p>
                     </div>
+
+                    {type === 'deposit' && (
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-gray-900">Datos personales:</h4>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Nombre
+                          </label>
+                          <input
+                            type="text"
+                            value={userDetails.first_name}
+                            onChange={(e) => setUserDetails({
+                              ...userDetails,
+                              first_name: e.target.value
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Tu nombre"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Apellido
+                          </label>
+                          <input
+                            type="text"
+                            value={userDetails.last_name}
+                            onChange={(e) => setUserDetails({
+                              ...userDetails,
+                              last_name: e.target.value
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Tu apellido"
+                          />
+                        </div>
+                      </div>
+                    )}
 
                     {type === 'withdrawal' && (
                       <div className="space-y-3">
@@ -384,6 +600,12 @@ export default function BankTransferModal({
                       <p className="text-sm text-gray-600">
                         Tu depósito se procesará automáticamente una vez confirmado el pago por QR
                       </p>
+                      {isCheckingPayment && (
+                        <div className="flex items-center justify-center mt-2 text-blue-600">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                          <span className="text-xs">Verificando pago...</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+
+# Notifications data
+notifications.json
+
+# Android
+BankListener/build/
+BankListener/app/build/
+BankListener/.gradle/
+BankListener/local.properties
+BankListener/.idea/
+*.iml
+*.log
+
+# IDE
+.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.bak

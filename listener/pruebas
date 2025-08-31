@@ -1,0 +1,13 @@
+  curl -X POST http://localhost:8000/api/notification \
+    -H "Content-Type: application/json" \
+    -d '{
+      "bank": "BNB",
+      "amount": 100.50,
+      "sender_name": "TEST USER", 
+      "transaction_type": "TRANSFER",
+      "raw_text": "Has recibido Bs. 100.50 de TEST USER",
+      "timestamp": 1234567890
+    }'
+
+
+  curl http://localhost:8000/api/notifications
