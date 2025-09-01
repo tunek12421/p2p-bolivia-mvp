@@ -636,10 +636,10 @@ func (e *MatchingEngine) ConfirmPayment(orderID, cashierID string) error {
 	// Verify order ownership by cashier
 	var order Order
 	err = tx.QueryRow(`
-		SELECT id, user_id, order_type, currency_from, currency_to, amount, status
+		SELECT id, user_id, order_type, currency_from, currency_to, amount, rate, status
 		FROM orders WHERE id = $1 AND cashier_id = $2 AND status IN ('MATCHED', 'PROCESSING') FOR UPDATE
 	`, orderID, cashierID).Scan(&order.ID, &order.UserID, &order.Type, 
-		&order.CurrencyFrom, &order.CurrencyTo, &order.Amount, &order.Status)
+		&order.CurrencyFrom, &order.CurrencyTo, &order.Amount, &order.Rate, &order.Status)
 	
 	if err != nil {
 		return fmt.Errorf("order not found or not assigned to this cashier")
@@ -664,61 +664,172 @@ func (e *MatchingEngine) ConfirmPayment(orderID, cashierID string) error {
 		log.Printf("Warning: failed to update p2p_orders table: %v", err)
 	}
 	
-	// Release locked funds and transfer to buyer for BUY orders
+	// Handle funds transfer based on order type
 	if order.Type == "BUY" {
-		// Release cashier locked funds (they've been paid)
+		// BUY order: User buys CurrencyTo with CurrencyFrom
+		// Example: User wants 100 USD (CurrencyTo), pays 690 BOB (CurrencyFrom)
+		
+		amountToPay := order.Amount.Mul(order.Rate) // Amount in CurrencyFrom that user pays
+		
+		log.Printf("💰 Processing BUY order: User pays %s %s to get %s %s", 
+			amountToPay.String(), order.CurrencyFrom, order.Amount.String(), order.CurrencyTo)
+		
+		// 1. Deduct payment amount from buyer's wallet (CurrencyFrom)
+		result, err := tx.Exec(`
+			UPDATE wallets 
+			SET balance = balance - $1, updated_at = NOW()
+			WHERE user_id = $2 AND currency = $3 AND balance >= $1
+		`, amountToPay, order.UserID, order.CurrencyFrom)
+		
+		if err != nil {
+			return fmt.Errorf("failed to deduct %s from buyer wallet: %v", order.CurrencyFrom, err)
+		}
+		
+		rowsAffected, err := result.RowsAffected()
+		if err != nil || rowsAffected == 0 {
+			return fmt.Errorf("insufficient %s balance for buyer (required: %s)", order.CurrencyFrom, amountToPay.String())
+		}
+		
+		// 2. Add payment to cashier's wallet (CurrencyFrom)
+		_, err = tx.Exec(`
+			INSERT INTO wallets (user_id, currency, balance, created_at, updated_at) 
+			VALUES ($1, $2, $3, NOW(), NOW())
+			ON CONFLICT (user_id, currency) 
+			DO UPDATE SET balance = wallets.balance + $3, updated_at = NOW()
+		`, cashierID, order.CurrencyFrom, amountToPay)
+		
+		if err != nil {
+			return fmt.Errorf("failed to credit %s to cashier wallet: %v", order.CurrencyFrom, err)
+		}
+		
+		// 3. Release cashier locked funds and give to buyer (CurrencyTo)
 		var lockedColumn string
 		switch order.CurrencyTo {
 		case "USD":
 			lockedColumn = "cashier_locked_usd"
 		case "USDT":
 			lockedColumn = "cashier_locked_usdt"
+		case "BOB":
+			// For BOB, use regular wallet system
+			_, err = tx.Exec(`
+				UPDATE wallets 
+				SET balance = balance - $1, updated_at = NOW()
+				WHERE user_id = $2 AND currency = $3 AND balance >= $1
+			`, order.Amount, cashierID, order.CurrencyTo)
+			
+			if err != nil {
+				return fmt.Errorf("failed to deduct %s from cashier wallet: %v", order.CurrencyTo, err)
+			}
+			
+			// Give to buyer
+			_, err = tx.Exec(`
+				INSERT INTO wallets (user_id, currency, balance, created_at, updated_at) 
+				VALUES ($1, $2, $3, NOW(), NOW())
+				ON CONFLICT (user_id, currency) 
+				DO UPDATE SET balance = wallets.balance + $3, updated_at = NOW()
+			`, order.UserID, order.CurrencyTo, order.Amount)
+			
+			if err != nil {
+				return fmt.Errorf("failed to credit %s to buyer wallet: %v", order.CurrencyTo, err)
+			}
 		default:
-			return fmt.Errorf("unsupported currency for release: %s", order.CurrencyTo)
+			return fmt.Errorf("unsupported currency for cashier: %s", order.CurrencyTo)
 		}
-
-		query := fmt.Sprintf(`UPDATE users SET %s = %s - $1 WHERE id = $2`, lockedColumn, lockedColumn)
-		_, err = tx.Exec(query, order.Amount, cashierID)
+		
+		// Handle USD/USDT from cashier locked funds
+		if order.CurrencyTo == "USD" || order.CurrencyTo == "USDT" {
+			// Release from locked funds
+			query := fmt.Sprintf(`UPDATE users SET %s = %s - $1 WHERE id = $2 AND %s >= $1`, 
+				lockedColumn, lockedColumn, lockedColumn)
+			result, err := tx.Exec(query, order.Amount, cashierID)
+			
+			if err != nil {
+				return fmt.Errorf("failed to release cashier locked funds: %v", err)
+			}
+			
+			rowsAffected, err := result.RowsAffected()
+			if err != nil || rowsAffected == 0 {
+				return fmt.Errorf("insufficient locked %s funds for cashier", order.CurrencyTo)
+			}
+			
+			// Add to buyer's wallet
+			_, err = tx.Exec(`
+				INSERT INTO wallets (user_id, currency, balance, created_at, updated_at) 
+				VALUES ($1, $2, $3, NOW(), NOW())
+				ON CONFLICT (user_id, currency) 
+				DO UPDATE SET balance = wallets.balance + $3, updated_at = NOW()
+			`, order.UserID, order.CurrencyTo, order.Amount)
+			
+			if err != nil {
+				return fmt.Errorf("failed to credit %s to buyer wallet: %v", order.CurrencyTo, err)
+			}
+		}
+		
+		log.Printf("✅ BUY order completed: User paid %s %s, received %s %s", 
+			amountToPay.String(), order.CurrencyFrom, order.Amount.String(), order.CurrencyTo)
+			
+	} else if order.Type == "SELL" {
+		// SELL order: User sells CurrencyFrom for CurrencyTo
+		// Example: User sells 50 USD (CurrencyFrom) for 342.5 BOB (CurrencyTo)
+		
+		amountToReceive := order.Amount.Mul(order.Rate) // Amount in CurrencyTo that user receives
+		
+		log.Printf("💰 Processing SELL order: User sells %s %s to get %s %s", 
+			order.Amount.String(), order.CurrencyFrom, amountToReceive.String(), order.CurrencyTo)
+		
+		// 1. Deduct selling amount from user's wallet (CurrencyFrom)
+		result, err := tx.Exec(`
+			UPDATE wallets 
+			SET balance = balance - $1, updated_at = NOW()
+			WHERE user_id = $2 AND currency = $3 AND balance >= $1
+		`, order.Amount, order.UserID, order.CurrencyFrom)
 		
 		if err != nil {
-			return fmt.Errorf("failed to release cashier funds: %v", err)
+			return fmt.Errorf("failed to deduct %s from seller wallet: %v", order.CurrencyFrom, err)
 		}
 		
-		// Add correct currency to buyer's wallet
+		rowsAffected, err := result.RowsAffected()
+		if err != nil || rowsAffected == 0 {
+			return fmt.Errorf("insufficient %s balance for seller (required: %s)", order.CurrencyFrom, order.Amount.String())
+		}
+		
+		// 2. Give sold currency to cashier (CurrencyFrom)
 		_, err = tx.Exec(`
-			INSERT INTO wallets (user_id, currency, balance) 
-			VALUES ($1, $2, $3)
+			INSERT INTO wallets (user_id, currency, balance, created_at, updated_at) 
+			VALUES ($1, $2, $3, NOW(), NOW())
 			ON CONFLICT (user_id, currency) 
-			DO UPDATE SET balance = wallets.balance + $3
-		`, order.UserID, order.CurrencyTo, order.Amount)
+			DO UPDATE SET balance = wallets.balance + $3, updated_at = NOW()
+		`, cashierID, order.CurrencyFrom, order.Amount)
 		
 		if err != nil {
-			return fmt.Errorf("failed to credit buyer: %v", err)
+			return fmt.Errorf("failed to credit %s to cashier wallet: %v", order.CurrencyFrom, err)
 		}
 		
-		// Deduct funds from order creator (buyer pays with CurrencyFrom)
-		amountToDeduct := order.Amount.Mul(order.Rate)
-		
-		// Deduct CurrencyFrom from buyer's wallet
+		// 3. Pay user with CurrencyTo from cashier
 		_, err = tx.Exec(`
 			UPDATE wallets 
-			SET balance = balance - $1
+			SET balance = balance - $1, updated_at = NOW()
 			WHERE user_id = $2 AND currency = $3 AND balance >= $1
-		`, amountToDeduct, order.UserID, order.CurrencyFrom)
+		`, amountToReceive, cashierID, order.CurrencyTo)
 		
 		if err != nil {
-			return fmt.Errorf("failed to deduct %s from buyer: %v", order.CurrencyFrom, err)
+			return fmt.Errorf("failed to deduct %s from cashier wallet: %v", order.CurrencyTo, err)
 		}
 		
-		// Verify the deduction was successful (no negative balance)
-		var newBalance decimal.Decimal
-		err = tx.QueryRow(`
-			SELECT balance FROM wallets WHERE user_id = $1 AND currency = $2
-		`, order.UserID, order.CurrencyFrom).Scan(&newBalance)
+		// 4. Credit user with received amount (CurrencyTo)
+		_, err = tx.Exec(`
+			INSERT INTO wallets (user_id, currency, balance, created_at, updated_at) 
+			VALUES ($1, $2, $3, NOW(), NOW())
+			ON CONFLICT (user_id, currency) 
+			DO UPDATE SET balance = wallets.balance + $3, updated_at = NOW()
+		`, order.UserID, order.CurrencyTo, amountToReceive)
 		
-		if err != nil || newBalance.IsNegative() {
-			return fmt.Errorf("insufficient %s balance for buyer", order.CurrencyFrom)
+		if err != nil {
+			return fmt.Errorf("failed to credit %s to seller wallet: %v", order.CurrencyTo, err)
 		}
+		
+		log.Printf("✅ SELL order completed: User sold %s %s, received %s %s", 
+			order.Amount.String(), order.CurrencyFrom, amountToReceive.String(), order.CurrencyTo)
 	}
 	
 	// Update assignment status
