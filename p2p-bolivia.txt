@@ -1,0 +1,3 @@
+HTTPS: https://github.com/tunek12421/p2p-bolivia-mvp.git
+SSH: git@github.com:tunek12421/p2p-bolivia-mvp.git
+GitHub CLI: gh repo clone tunek12421/p2p-bolivia-mvp

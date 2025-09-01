@@ -55,6 +55,29 @@ func (e *MatchingEngine) AddOrder(order Order) (string, error) {
 	ctx := context.Background()
 	log.Println("🔧 ENGINE: AddOrder iniciado")
 	
+	// Validate user has sufficient funds for BUY orders
+	if order.Type == "BUY" {
+		var userBalance decimal.Decimal
+		requiredAmount := order.Amount.Mul(order.Rate) // Amount needed in CurrencyFrom
+		
+		err := e.db.QueryRow(`
+			SELECT COALESCE(balance, 0) FROM wallets 
+			WHERE user_id = $1 AND currency = $2
+		`, order.UserID, order.CurrencyFrom).Scan(&userBalance)
+		
+		if err != nil && err != sql.ErrNoRows {
+			return "", fmt.Errorf("failed to check user balance: %v", err)
+		}
+		
+		if userBalance.LessThan(requiredAmount) {
+			return "", fmt.Errorf("insufficient %s balance. Required: %s, Available: %s", 
+				order.CurrencyFrom, requiredAmount.String(), userBalance.String())
+		}
+		
+		log.Printf("✅ ENGINE: Balance validation passed - Required: %s %s, Available: %s %s", 
+			requiredAmount.String(), order.CurrencyFrom, userBalance.String(), order.CurrencyFrom)
+	}
+	
 	// Set order status to PENDING - cashiers will accept manually
 	order.Status = "PENDING"
 	log.Printf("📝 ENGINE: Status establecido a: %s", order.Status)
@@ -504,25 +527,41 @@ func (e *MatchingEngine) AcceptOrder(orderID, cashierID string) error {
 	// Verify cashier has sufficient balance for BUY orders
 	if order.Type == "BUY" {
 		var cashierBalance decimal.Decimal
-		err = tx.QueryRow(`
-			SELECT COALESCE(cashier_balance_usd, 0) FROM users WHERE id = $1 AND is_cashier = true
-		`, cashierID).Scan(&cashierBalance)
+		var balanceColumn string
+		var lockedColumn string
+		
+		// Determinar columnas según la moneda de destino
+		switch order.CurrencyTo {
+		case "USD":
+			balanceColumn = "cashier_balance_usd"
+			lockedColumn = "cashier_locked_usd"
+		case "USDT":
+			balanceColumn = "cashier_balance_usdt"
+			lockedColumn = "cashier_locked_usdt"
+		default:
+			return fmt.Errorf("unsupported currency for cashier: %s", order.CurrencyTo)
+		}
+		
+		query := fmt.Sprintf(`SELECT COALESCE(%s, 0) FROM users WHERE id = $1 AND is_cashier = true`, balanceColumn)
+		err = tx.QueryRow(query, cashierID).Scan(&cashierBalance)
 		
 		if err != nil {
 			return fmt.Errorf("cashier not found or not verified")
 		}
 		
 		if cashierBalance.LessThan(order.Amount) {
-			return fmt.Errorf("insufficient cashier balance")
+			return fmt.Errorf("insufficient cashier balance for %s", order.CurrencyTo)
 		}
 		
 		// Lock cashier funds
-		_, err = tx.Exec(`
+		updateQuery := fmt.Sprintf(`
 			UPDATE users SET 
-				cashier_balance_usd = cashier_balance_usd - $1,
-				cashier_locked_usd = cashier_locked_usd + $1
+				%s = %s - $1,
+				%s = %s + $1
 			WHERE id = $2
-		`, order.Amount, cashierID)
+		`, balanceColumn, balanceColumn, lockedColumn, lockedColumn)
+		
+		_, err = tx.Exec(updateQuery, order.Amount, cashierID)
 		
 		if err != nil {
 			return fmt.Errorf("failed to lock cashier funds: %v", err)
@@ -628,24 +667,57 @@ func (e *MatchingEngine) ConfirmPayment(orderID, cashierID string) error {
 	// Release locked funds and transfer to buyer for BUY orders
 	if order.Type == "BUY" {
 		// Release cashier locked funds (they've been paid)
-		_, err = tx.Exec(`
-			UPDATE users SET cashier_locked_usd = cashier_locked_usd - $1 WHERE id = $2
-		`, order.Amount, cashierID)
+		var lockedColumn string
+		switch order.CurrencyTo {
+		case "USD":
+			lockedColumn = "cashier_locked_usd"
+		case "USDT":
+			lockedColumn = "cashier_locked_usdt"
+		default:
+			return fmt.Errorf("unsupported currency for release: %s", order.CurrencyTo)
+		}
+
+		query := fmt.Sprintf(`UPDATE users SET %s = %s - $1 WHERE id = $2`, lockedColumn, lockedColumn)
+		_, err = tx.Exec(query, order.Amount, cashierID)
 		
 		if err != nil {
 			return fmt.Errorf("failed to release cashier funds: %v", err)
 		}
 		
-		// Add USD to buyer's wallet
+		// Add correct currency to buyer's wallet
 		_, err = tx.Exec(`
 			INSERT INTO wallets (user_id, currency, balance) 
-			VALUES ($1, 'USD', $2)
+			VALUES ($1, $2, $3)
 			ON CONFLICT (user_id, currency) 
-			DO UPDATE SET balance = wallets.balance + $2
-		`, order.UserID, order.Amount)
+			DO UPDATE SET balance = wallets.balance + $3
+		`, order.UserID, order.CurrencyTo, order.Amount)
 		
 		if err != nil {
 			return fmt.Errorf("failed to credit buyer: %v", err)
+		}
+		
+		// Deduct funds from order creator (buyer pays with CurrencyFrom)
+		amountToDeduct := order.Amount.Mul(order.Rate)
+		
+		// Deduct CurrencyFrom from buyer's wallet
+		_, err = tx.Exec(`
+			UPDATE wallets 
+			SET balance = balance - $1
+			WHERE user_id = $2 AND currency = $3 AND balance >= $1
+		`, amountToDeduct, order.UserID, order.CurrencyFrom)
+		
+		if err != nil {
+			return fmt.Errorf("failed to deduct %s from buyer: %v", order.CurrencyFrom, err)
+		}
+		
+		// Verify the deduction was successful (no negative balance)
+		var newBalance decimal.Decimal
+		err = tx.QueryRow(`
+			SELECT balance FROM wallets WHERE user_id = $1 AND currency = $2
+		`, order.UserID, order.CurrencyFrom).Scan(&newBalance)
+		
+		if err != nil || newBalance.IsNegative() {
+			return fmt.Errorf("insufficient %s balance for buyer", order.CurrencyFrom)
 		}
 	}
 	
