@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -68,6 +69,10 @@ func (e *MatchingEngine) AddOrder(order Order) (string, error) {
 	
 	paymentMethodsJSON, _ := json.Marshal(order.PaymentMethods)
 	log.Printf("🗃️ ENGINE: PaymentMethods JSON: %s", string(paymentMethodsJSON))
+	
+	// Convert JSON array to PostgreSQL array format for p2p_orders table
+	pgArray := convertJSONArrayToPGArray(order.PaymentMethods)
+	log.Printf("🗃️ ENGINE: PaymentMethods PostgreSQL: %s", pgArray)
 	log.Printf("📊 ENGINE: Query SQL: %s", query)
 	log.Printf("📋 ENGINE: Parámetros:")
 	log.Printf("  $1 user_id: %s", order.UserID)
@@ -108,7 +113,7 @@ func (e *MatchingEngine) AddOrder(order Order) (string, error) {
 	_, err = e.db.Exec(p2pQuery,
 		order.ID, order.UserID, order.Type, order.CurrencyFrom, order.CurrencyTo,
 		order.Amount, order.RemainingAmount, order.Rate, order.MinAmount, order.MaxAmount,
-		string(paymentMethodsJSON), order.Status, order.CreatedAt,
+		pgArray, order.Status, order.CreatedAt,
 	)
 	
 	if err != nil {
@@ -827,4 +832,50 @@ func (e *MatchingEngine) createTransactionChatRoom(orderID, userID, cashierID st
 	}
 	
 	log.Printf("✅ Chat room created successfully for transaction %s", orderID)
+}
+
+// convertJSONArrayToPGArray converts a JSON array to PostgreSQL array format
+// ["qr", "bank_transfer"] -> {"qr","bank_transfer"}
+func convertJSONArrayToPGArray(methods []string) string {
+	if len(methods) == 0 {
+		return "{}"
+	}
+	
+	pgArray := "{"
+	for i, method := range methods {
+		if i > 0 {
+			pgArray += ","
+		}
+		pgArray += method
+	}
+	pgArray += "}"
+	
+	return pgArray
+}
+
+// convertPGArrayToSlice converts PostgreSQL array format to Go slice
+// {qr,bank_transfer} -> ["qr", "bank_transfer"]
+func convertPGArrayToSlice(pgArray string) []string {
+	// Remove braces and split by comma
+	if pgArray == "{}" || pgArray == "" {
+		return []string{}
+	}
+	
+	// Remove { and }
+	content := strings.Trim(pgArray, "{}")
+	if content == "" {
+		return []string{}
+	}
+	
+	// Split by comma and trim spaces
+	parts := strings.Split(content, ",")
+	var result []string
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	
+	return result
 }

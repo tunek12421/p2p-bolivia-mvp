@@ -52,7 +52,7 @@ func (s *Server) handleGetOrders(c *gin.Context) {
 		SELECT id, user_id, order_type, currency_from, currency_to, amount, remaining_amount,
 			rate, min_amount, max_amount, payment_methods, status, created_at
 		FROM p2p_orders
-		WHERE status IN ('MATCHED', 'PROCESSING')
+		WHERE status = 'PENDING'
 	`
 	
 	if currencyFrom != "" {
@@ -106,7 +106,8 @@ func (s *Server) handleGetOrders(c *gin.Context) {
 			continue
 		}
 		
-		json.Unmarshal([]byte(paymentMethodsJSON), &order.PaymentMethods)
+		// Convert PostgreSQL array format to Go slice
+		order.PaymentMethods = convertPGArrayToSlice(paymentMethodsJSON)
 		orders = append(orders, order)
 	}
 	

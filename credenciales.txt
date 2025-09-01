@@ -1,0 +1,22 @@
+1. Usuario Regular:
+
+  - Email: usuario.regular@test.com
+  - Password: password123
+  - Role: user
+
+  2. Cajero:
+
+  - Email: cajero.nuevo@test.com
+  - Password: password123
+  - Role: cashier
+
+  3. Administrador:
+
+  - Email: admin@p2p-bolivia.com
+  - Password: password123
+  - Role: admin
+
+  4. Usuarios adicionales:
+
+  - Email: user@test.com (password123, role: user)
+  - Email: cashier@test.com (password123, role: cashier)

@@ -10,6 +10,7 @@ interface User {
   phone?: string
   isVerified: boolean
   createdAt: string
+  role?: string
 }
 
 interface AuthContextType {

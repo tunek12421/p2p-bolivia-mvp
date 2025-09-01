@@ -3,6 +3,8 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   output: 'standalone',
+  trailingSlash: true,
+  images: { unoptimized: true },
   compress: true,
   poweredByHeader: false,
   
@@ -49,7 +51,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https: blob:",
               "font-src 'self'",
-              "connect-src 'self' http://localhost:* ws://localhost:*",
+              "connect-src 'self' http://localhost:* ws://localhost:* http://192.168.1.222:* ws://192.168.1.222:*",
               "frame-ancestors 'none'",
             ].join('; '),
           },
@@ -62,7 +64,7 @@ const nextConfig = {
     ]
   },
   
-  // API rewrites
+  // API rewrites (enabled for standalone mode)
   async rewrites() {
     return [
       {
@@ -102,7 +104,7 @@ const nextConfig = {
   },
   
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080',
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://192.168.1.222:8080',
     NEXT_PUBLIC_APP_NAME: 'P2P Bolivia',
     NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version || '1.0.0',
   },

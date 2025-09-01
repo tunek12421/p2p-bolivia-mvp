@@ -3,6 +3,15 @@ import { chatAPI, ChatRoom, ChatMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import styles from '../styles/TransactionChat.module.css';
 
+// Import Capacitor Network plugin (conditional for web compatibility)
+let Network: any = null;
+try {
+  Network = require('@capacitor/network').Network;
+} catch (e) {
+  // Network plugin not available (probably on web)
+  console.log('Capacitor Network plugin not available, using web-only mode');
+}
+
 interface Message extends ChatMessage {}
 
 interface TransactionChatProps {
@@ -18,7 +27,9 @@ const TransactionChat: React.FC<TransactionChatProps> = ({ orderId, userType, on
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Use auth context for consistent token and user management
   const { user, token } = useAuth();
@@ -106,66 +117,134 @@ const TransactionChat: React.FC<TransactionChatProps> = ({ orderId, userType, on
     }
   };
 
-  // Connect to WebSocket
-  useEffect(() => {
-    if (chatRoom && currentUserId && token) {
-      // Ensure token is not null
-      const wsToken = token || '';
-      const wsUrl = `ws://localhost:8080/api/v1/ws?token=${wsToken}&user_id=${currentUserId}`;
-      
-      console.log('🔄 Connecting to WebSocket:', wsUrl.replace(wsToken, 'TOKEN_HIDDEN'));
-      
-      const websocket = new WebSocket(wsUrl);
+  // Connect to WebSocket with reconnection logic
+  const connectWebSocket = React.useCallback(() => {
+    if (!chatRoom || !currentUserId || !token) return;
 
-      websocket.onopen = () => {
-        console.log('✅ WebSocket connected');
-        setIsConnected(true);
-        
-        // Join the chat room
-        websocket.send(JSON.stringify({
-          type: 'join_room',
-          room_id: chatRoom.id,
-        }));
-      };
-
-      websocket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          console.log('📨 Received WebSocket message:', message);
-          
-          if (message.room_id === chatRoom.id) {
-            // Check if message already exists to avoid duplicates
-            const messageExists = messages.some(m => m.id === message.id);
-            
-            if (!messageExists && message.content && message.content.trim()) {
-              setMessages(prev => [...prev, message]);
-              console.log('✅ Added new message via WebSocket');
-            } else {
-              console.log('⚠️ Skipped duplicate/empty message:', message.id);
-            }
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
-      };
-
-      websocket.onclose = () => {
-        console.log('🔌 WebSocket disconnected');
-        setIsConnected(false);
-      };
-
-      websocket.onerror = (error) => {
-        console.error('❌ WebSocket error:', error);
-        setIsConnected(false);
-      };
-
-      setWs(websocket);
-
-      return () => {
-        websocket.close();
-      };
+    // Clear any existing timeout
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
-  }, [chatRoom, currentUserId, token]);
+
+    // Ensure token is not null
+    const wsToken = token || '';
+    
+    // Get API URL and convert to WebSocket URL
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    const wsBaseUrl = API_URL.replace('http://', 'ws://').replace('https://', 'wss://');
+    const wsUrl = `${wsBaseUrl}/api/v1/ws?token=${wsToken}&user_id=${currentUserId}`;
+    
+    console.log('🔄 Connecting to WebSocket (attempt ' + (reconnectAttempts + 1) + '):', wsUrl.replace(wsToken, 'TOKEN_HIDDEN'));
+    
+    const websocket = new WebSocket(wsUrl);
+
+    websocket.onopen = () => {
+      console.log('✅ WebSocket connected successfully');
+      setIsConnected(true);
+      setReconnectAttempts(0); // Reset reconnect attempts on successful connection
+      
+      // Join the chat room
+      websocket.send(JSON.stringify({
+        type: 'join_room',
+        room_id: chatRoom.id,
+      }));
+    };
+
+    websocket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        console.log('📨 Received WebSocket message:', message);
+        
+        if (message.room_id === chatRoom.id) {
+          // Check if message already exists to avoid duplicates
+          const messageExists = messages.some(m => m.id === message.id);
+          
+          if (!messageExists && message.content && message.content.trim()) {
+            setMessages(prev => [...prev, message]);
+            console.log('✅ Added new message via WebSocket');
+          } else {
+            console.log('⚠️ Skipped duplicate/empty message:', message.id);
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+
+    websocket.onclose = (event) => {
+      console.log('🔌 WebSocket disconnected, code:', event.code, 'reason:', event.reason);
+      setIsConnected(false);
+      
+      // Attempt to reconnect if the close was not intentional (code !== 1000)
+      if (event.code !== 1000 && reconnectAttempts < 5) {
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential backoff, max 30s
+        console.log(`🔄 Attempting to reconnect in ${delay}ms (attempt ${reconnectAttempts + 1}/5)`);
+        
+        reconnectTimeoutRef.current = setTimeout(() => {
+          setReconnectAttempts(prev => prev + 1);
+          connectWebSocket();
+        }, delay);
+      }
+    };
+
+    websocket.onerror = (error) => {
+      console.error('❌ WebSocket error:', error);
+      setIsConnected(false);
+    };
+
+    setWs(websocket);
+
+    return websocket;
+  }, [chatRoom, currentUserId, token, reconnectAttempts, messages]);
+
+  useEffect(() => {
+    const websocket = connectWebSocket();
+    
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (websocket) {
+        websocket.close(1000); // Normal closure
+      }
+    };
+  }, [connectWebSocket]);
+
+  // Network change detection (Capacitor only)
+  useEffect(() => {
+    if (!Network) return; // Not available on web
+
+    let networkListener: any = null;
+
+    const setupNetworkListener = async () => {
+      try {
+        // Listen for network changes
+        networkListener = await Network.addListener('networkStatusChange', (status: any) => {
+          console.log('🌐 Network status changed:', status);
+          
+          if (status.connected && !isConnected) {
+            console.log('🔄 Network reconnected, attempting to reconnect WebSocket');
+            setReconnectAttempts(0); // Reset attempts when network comes back
+            connectWebSocket();
+          }
+        });
+        
+        console.log('🌐 Network listener setup complete');
+      } catch (error) {
+        console.error('❌ Failed to setup network listener:', error);
+      }
+    };
+
+    setupNetworkListener();
+
+    return () => {
+      if (networkListener) {
+        networkListener.remove();
+      }
+    };
+  }, [isConnected, connectWebSocket]);
 
   // Send message - SIMPLIFIED VERSION
   const sendMessage = async () => {
@@ -251,7 +330,8 @@ const TransactionChat: React.FC<TransactionChatProps> = ({ orderId, userType, on
       <div className={styles.chatHeader}>
         <h3>💬 Chat de Transacción</h3>
         <div className={styles.connectionStatus}>
-          {isConnected ? '🟢 Conectado' : '🔴 Desconectado'}
+          {isConnected ? '🟢 Conectado' : 
+           reconnectAttempts > 0 ? `🟡 Reconectando... (${reconnectAttempts}/5)` : '🔴 Desconectado'}
         </div>
         <button onClick={onClose} className={styles.closeButton}>✕</button>
       </div>

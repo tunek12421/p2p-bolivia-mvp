@@ -1,0 +1,9 @@
+{
+  "appId": "com.p2pbolivia.app",
+  "appName": "P2P Bolivia",
+  "webDir": "../frontend/out",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
+}

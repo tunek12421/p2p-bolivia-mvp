@@ -13,7 +13,8 @@ import {
   ArrowRightOnRectangleIcon,
   Bars3Icon,
   XMarkIcon,
-  BellIcon
+  BellIcon,
+  BanknotesIcon
 } from '@heroicons/react/24/outline'
 import toast from 'react-hot-toast'
 
@@ -21,7 +22,7 @@ interface DashboardLayoutProps {
   children: ReactNode
 }
 
-const navigation = [
+const baseNavigation = [
   { name: 'Panel', href: '/dashboard', icon: HomeIcon },
   { name: 'Intercambiar', href: '/trade', icon: ArrowsRightLeftIcon },
   { name: 'Billetera', href: '/wallet', icon: CurrencyDollarIcon },
@@ -29,10 +30,26 @@ const navigation = [
   // { name: 'Analíticas', href: '/analytics', icon: ChartBarIcon },
 ]
 
+const getCashierNavigation = (isDev: boolean, userRole?: string) => [
+  { 
+    name: isDev && userRole !== 'cashier' ? 'Panel Cajero (Dev)' : 'Panel Cajero', 
+    href: '/cashier', 
+    icon: BanknotesIcon, 
+    roles: ['cashier'] 
+  },
+]
+
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user, logout } = useAuth()
   const router = useRouter()
+
+  // Build navigation based on user role
+  const navigation = [...baseNavigation]
+  const isDev = process.env.NODE_ENV === 'development'
+  if (user?.role === 'cashier' || isDev) {
+    navigation.push(...getCashierNavigation(isDev, user?.role))
+  }
 
   const handleLogout = () => {
     logout()
