@@ -24,6 +24,8 @@ import WalletScreen from './src/screens/WalletScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import KYCScreen from './src/screens/KYCScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import TransactionsScreen from './src/screens/TransactionsScreen';
+import UserOrdersScreen from './src/screens/UserOrdersScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -63,12 +65,19 @@ export default function App() {
 
   useEffect(() => {
     checkAuthStatus();
+    
+    // Listen for auth changes
+    const interval = setInterval(checkAuthStatus, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const checkAuthStatus = async () => {
     try {
       const token = await AsyncStorage.getItem('auth_token');
-      setIsAuthenticated(!!token);
+      const newAuthStatus = !!token;
+      if (newAuthStatus !== isAuthenticated) {
+        setIsAuthenticated(newAuthStatus);
+      }
     } catch (error) {
       console.error('Error checking auth status:', error);
     } finally {
@@ -99,6 +108,8 @@ export default function App() {
               <Stack.Screen name="Main" component={MainTabs} />
               <Stack.Screen name="KYC" component={KYCScreen} />
               <Stack.Screen name="Chat" component={ChatScreen} />
+              <Stack.Screen name="Transactions" component={TransactionsScreen} />
+              <Stack.Screen name="UserOrders" component={UserOrdersScreen} />
             </>
           )}
         </Stack.Navigator>

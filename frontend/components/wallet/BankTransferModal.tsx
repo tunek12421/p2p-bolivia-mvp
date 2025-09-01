@@ -3,6 +3,7 @@ import { Dialog, Transition } from '@headlessui/react'
 import { Fragment } from 'react'
 import { XMarkIcon, BanknotesIcon, ClockIcon, CheckCircleIcon, DocumentDuplicateIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline'
 import { walletAPI } from '../../lib/api'
+import { fetchMarketRates, MarketRates, getRateForPair } from '../../lib/marketRates'
 import toast from 'react-hot-toast'
 
 interface BankTransferModalProps {
@@ -12,6 +13,7 @@ interface BankTransferModalProps {
   type: 'deposit' | 'withdrawal'
   onSuccess: () => void
   availableBalance?: number
+  bobBalance?: number
 }
 
 interface BankDetails {
@@ -35,14 +37,18 @@ export default function BankTransferModal({
   currency, 
   type, 
   onSuccess,
-  availableBalance = 0
+  availableBalance = 0,
+  bobBalance = 0
 }: BankTransferModalProps) {
   const [amount, setAmount] = useState('')
+  const [bobAmount, setBobAmount] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [step, setStep] = useState<'amount' | 'instructions' | 'confirmation'>('amount')
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null)
   const [qrDetails, setQRDetails] = useState<QRDetails | null>(null)
   const [transactionId, setTransactionId] = useState('')
+  const [marketRates, setMarketRates] = useState<MarketRates | null>(null)
+  const [isLoadingRates, setIsLoadingRates] = useState(false)
   const [withdrawalDestination, setWithdrawalDestination] = useState({
     account_holder: '',
     bank: '',
@@ -54,6 +60,67 @@ export default function BankTransferModal({
   })
   const [isCheckingPayment, setIsCheckingPayment] = useState(false)
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Fetch market rates when modal opens
+  useEffect(() => {
+    if (isOpen && currency !== 'BOB') {
+      fetchRates()
+    }
+  }, [isOpen, currency])
+
+  const fetchRates = async () => {
+    setIsLoadingRates(true)
+    try {
+      const rates = await fetchMarketRates()
+      setMarketRates(rates)
+    } catch (error) {
+      console.error('Error fetching market rates:', error)
+      toast.error('Error cargando tasas de cambio')
+    } finally {
+      setIsLoadingRates(false)
+    }
+  }
+
+  const getExchangeRate = (): number => {
+    if (!marketRates || currency === 'BOB') return 1
+    return getRateForPair(marketRates, 'BOB', currency)
+  }
+
+  const calculateConversion = (inputAmount: string, fromCurrency: string): { targetAmount: string, sourceAmount: string } => {
+    const amount = parseFloat(inputAmount) || 0
+    if (currency === 'BOB') {
+      return { targetAmount: inputAmount, sourceAmount: inputAmount }
+    }
+    
+    const rate = getExchangeRate()
+    if (fromCurrency === 'BOB') {
+      // BOB to target currency
+      const targetAmount = (amount * rate).toFixed(4)
+      return { targetAmount, sourceAmount: inputAmount }
+    } else {
+      // Target currency to BOB
+      const sourceAmount = (amount / rate).toFixed(2)
+      return { targetAmount: inputAmount, sourceAmount }
+    }
+  }
+
+  const handleAmountChange = (value: string, isTargetCurrency: boolean = true) => {
+    if (currency === 'BOB') {
+      setAmount(value)
+      setBobAmount(value)
+      return
+    }
+
+    const conversion = calculateConversion(value, isTargetCurrency ? currency : 'BOB')
+    
+    if (isTargetCurrency) {
+      setAmount(value)
+      setBobAmount(conversion.sourceAmount)
+    } else {
+      setBobAmount(value)
+      setAmount(conversion.targetAmount)
+    }
+  }
 
   const getCurrencySymbol = (curr: string) => {
     switch (curr) {
@@ -167,16 +234,27 @@ export default function BankTransferModal({
       return
     }
 
-    if (currency === 'BOB' && amountNum < 10) {
-      console.log('❌ [BankTransferModal] Validación fallida: monto mínimo BOB', { currency, amountNum, minimo: 10 })
-      toast.error('El monto mínimo es Bs. 10.00')
-      return
-    }
-
-    if (currency === 'USD' && amountNum < 5) {
-      console.log('❌ [BankTransferModal] Validación fallida: monto mínimo USD', { currency, amountNum, minimo: 5 })
-      toast.error('El monto mínimo es $5.00')
-      return
+    // Validate BOB amount for conversions
+    const bobAmountNum = parseFloat(bobAmount)
+    if (currency !== 'BOB') {
+      if (bobAmountNum < 10) {
+        console.log('❌ [BankTransferModal] Validación fallida: monto mínimo BOB para conversión', { currency, bobAmountNum, minimo: 10 })
+        toast.error('El monto mínimo en BOB es Bs. 10.00')
+        return
+      }
+      
+      if (type === 'deposit' && bobAmountNum > bobBalance) {
+        console.log('❌ [BankTransferModal] Validación fallida: balance BOB insuficiente', { bobAmountNum, bobBalance })
+        toast.error('No tienes suficientes BOB para esta conversión')
+        return
+      }
+    } else {
+      // Direct BOB deposit
+      if (amountNum < 10) {
+        console.log('❌ [BankTransferModal] Validación fallida: monto mínimo BOB', { currency, amountNum, minimo: 10 })
+        toast.error('El monto mínimo es Bs. 10.00')
+        return
+      }
     }
 
     if (type === 'withdrawal' && amountNum > availableBalance) {
@@ -208,18 +286,34 @@ export default function BankTransferModal({
 
     try {
       if (type === 'deposit') {
-        console.log('💰 [BankTransferModal] Procesando depósito - obteniendo QR', { currency })
-        // Get QR deposit instructions
-        const response = await walletAPI.getDepositQR(currency)
-        console.log('✅ [BankTransferModal] QR obtenido exitosamente', response.data)
-        setQRDetails(response.data.data)
-        
-        // También registrar el intento de depósito
-        console.log('💾 [BankTransferModal] Registrando intento de depósito...')
-        await handleDepositConfirmation()
-        
-        setStep('instructions')
-        console.log('📱 [BankTransferModal] Cambiando a step: instructions')
+        if (currency === 'BOB') {
+          console.log('💰 [BankTransferModal] Procesando depósito BOB - obteniendo QR', { currency })
+          // Get QR deposit instructions for BOB
+          const response = await walletAPI.getDepositQR(currency)
+          console.log('✅ [BankTransferModal] QR obtenido exitosamente', response.data)
+          setQRDetails(response.data.data)
+          
+          // También registrar el intento de depósito
+          console.log('💾 [BankTransferModal] Registrando intento de depósito...')
+          await handleDepositConfirmation()
+          
+          setStep('instructions')
+          console.log('📱 [BankTransferModal] Cambiando a step: instructions')
+        } else {
+          console.log('💰 [BankTransferModal] Procesando conversión BOB a', { currency, bobAmount, targetAmount: amount })
+          // Convert BOB to target currency
+          const response = await walletAPI.convertCurrency({
+            from_currency: 'BOB',
+            to_currency: currency,
+            from_amount: parseFloat(bobAmount),
+            to_amount: amountNum,
+            rate: getExchangeRate()
+          })
+          console.log('✅ [BankTransferModal] Conversión exitosa', { transactionId: response.data.transaction_id })
+          setTransactionId(response.data.transaction_id)
+          setStep('confirmation')
+          console.log('🔄 [BankTransferModal] Cambiando a step: confirmation')
+        }
       } else {
         console.log('💸 [BankTransferModal] Procesando retiro', { currency, amountNum, destination: withdrawalDestination })
         // Create withdrawal
@@ -396,29 +490,78 @@ export default function BankTransferModal({
 
                 {step === 'amount' && (
                   <div className="space-y-4">
+                    {currency !== 'BOB' && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 className="font-medium text-blue-800 mb-2">Conversión desde BOB</h4>
+                        <p className="text-sm text-blue-700">
+                          Depositarás {currency} convirtiendo desde tu balance de BOB
+                        </p>
+                        {isLoadingRates ? (
+                          <div className="flex items-center mt-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                            <span className="text-xs text-blue-600">Cargando tasas...</span>
+                          </div>
+                        ) : marketRates && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            Tasa: 1 {currency} = {(1 / getExchangeRate()).toFixed(2)} BOB
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Monto ({currency})
+                        Monto a recibir ({currency})
                       </label>
                       <div className="relative">
                         <input
                           type="number"
                           value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
+                          onChange={(e) => handleAmountChange(e.target.value, true)}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder={`0.00 ${currency}`}
                           min="0"
-                          step="0.01"
+                          step={currency === 'BOB' ? '1' : '0.01'}
+                          disabled={isLoadingRates && currency !== 'BOB'}
                         />
                         <div className="absolute inset-y-0 right-0 flex items-center pr-3">
                           <span className="text-gray-500">{getCurrencySymbol(currency)}</span>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Mínimo: {getCurrencySymbol(currency)}{currency === 'BOB' ? '10.00' : '5.00'}
-                        {type === 'withdrawal' && ` | Disponible: ${getCurrencySymbol(currency)}${availableBalance.toFixed(2)}`}
-                      </p>
                     </div>
+
+                    {currency !== 'BOB' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Monto a descontar en BOB
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={bobAmount}
+                            onChange={(e) => handleAmountChange(e.target.value, false)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-green-50"
+                            placeholder="0.00 BOB"
+                            min="0"
+                            step="1"
+                            disabled={isLoadingRates}
+                          />
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                            <span className="text-gray-500">Bs.</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Disponible: Bs. {bobBalance.toFixed(2)} | Mínimo: Bs. 10.00
+                        </p>
+                      </div>
+                    )}
+
+                    {currency === 'BOB' && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Mínimo: Bs. 10.00
+                        {type === 'withdrawal' && ` | Disponible: Bs. ${availableBalance.toFixed(2)}`}
+                      </p>
+                    )}
 
                     {type === 'deposit' && (
                       <div className="space-y-3">

@@ -56,7 +56,18 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
         ]
       );
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Error al crear la cuenta');
+      console.error('Registration error details:', error);
+      let errorMessage = 'Error al crear la cuenta';
+      
+      if (error?.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.error) {
+        errorMessage = error.error;
+      }
+      
+      Alert.alert('Error de Registro', `${errorMessage}\n\nDetalles técnicos: ${JSON.stringify(error, null, 2)}`);
     } finally {
       setIsLoading(false);
     }

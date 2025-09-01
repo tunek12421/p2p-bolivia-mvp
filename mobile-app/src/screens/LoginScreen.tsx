@@ -31,13 +31,23 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
     setIsLoading(true);
     try {
       const response = await authService.login(email, password);
-      await AsyncStorage.setItem('auth_token', response.token);
-      await AsyncStorage.setItem('user_id', response.user.id);
+      await AsyncStorage.setItem('auth_token', response.access_token);
+      await AsyncStorage.setItem('user_id', response.user_id);
       
-      // Navigate to main app
-      navigation.replace('Main');
+      // App.tsx will automatically detect the token and navigate
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Error al iniciar sesión');
+      console.error('Login error details:', error);
+      let errorMessage = 'Error al iniciar sesión';
+      
+      if (error?.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.error) {
+        errorMessage = error.error;
+      }
+      
+      Alert.alert('Error de Login', `${errorMessage}\n\nDetalles técnicos: ${JSON.stringify(error, null, 2)}`);
     } finally {
       setIsLoading(false);
     }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -56,6 +57,14 @@ type TransferRequest struct {
 	ToCurrency   string  `json:"to_currency" binding:"required"`
 	Amount       float64 `json:"amount" binding:"required,gt=0"`
 	RecipientID  string  `json:"recipient_id" binding:"required"`
+}
+
+type ConvertRequest struct {
+	FromCurrency string  `json:"from_currency" binding:"required"`
+	ToCurrency   string  `json:"to_currency" binding:"required"`
+	FromAmount   float64 `json:"from_amount" binding:"required,gt=0"`
+	ToAmount     float64 `json:"to_amount" binding:"required,gt=0"`
+	Rate         float64 `json:"rate" binding:"required,gt=0"`
 }
 
 func (s *Server) handleGetWallets(c *gin.Context) {
@@ -574,6 +583,202 @@ func (s *Server) generateTxID() string {
 			time.Now().UnixNano()&0xffffffffffff)
 	}
 	return txID
+}
+
+func (s *Server) handleConvert(c *gin.Context) {
+	userID := c.GetString("user_id")
+	log.Printf("🔄 [CONVERSION] Starting conversion for user: %s", userID)
+	
+	var req ConvertRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("❌ [CONVERSION] JSON binding error: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	
+	log.Printf("📊 [CONVERSION] Request: %s %.4f -> %s %.4f (rate: %.6f)", 
+		req.FromCurrency, req.FromAmount, req.ToCurrency, req.ToAmount, req.Rate)
+
+	// Validate currency conversion
+	if req.FromCurrency == req.ToCurrency {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot convert currency to itself"})
+		return
+	}
+
+	// For now, only support BOB to USD/USDT conversions
+	if req.FromCurrency != "BOB" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Currently only BOB to USD/USDT conversions are supported"})
+		return
+	}
+
+	if req.ToCurrency != "USD" && req.ToCurrency != "USDT" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Currently only BOB to USD/USDT conversions are supported"})
+		return
+	}
+
+	log.Printf("🏦 [CONVERSION] Starting database transaction...")
+	tx, err := s.db.Begin()
+	if err != nil {
+		log.Printf("❌ [CONVERSION] Failed to begin transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to begin transaction"})
+		return
+	}
+	defer tx.Rollback()
+
+	// Check if user has enough balance in source currency
+	row := tx.QueryRow(`
+		SELECT COALESCE(balance, 0) - COALESCE(locked_balance, 0) as available_balance
+		FROM wallets 
+		WHERE user_id = $1 AND currency = $2
+	`, userID, req.FromCurrency)
+	
+	var availableBalance decimal.Decimal
+	if err := row.Scan(&availableBalance); err != nil {
+		if err == sql.ErrNoRows {
+			availableBalance = decimal.Zero
+			log.Printf("⚠️ [CONVERSION] No wallet found for %s %s, using zero balance", userID, req.FromCurrency)
+		} else {
+			log.Printf("❌ [CONVERSION] Balance check error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check balance"})
+			return
+		}
+	}
+
+	fromAmountDecimal := decimal.NewFromFloat(req.FromAmount)
+	log.Printf("💰 [CONVERSION] Balance check: available=%s, required=%s", 
+		availableBalance.String(), fromAmountDecimal.String())
+		
+	if availableBalance.LessThan(fromAmountDecimal) {
+		log.Printf("❌ [CONVERSION] Insufficient balance: need %s, have %s", 
+			fromAmountDecimal.String(), availableBalance.String())
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Insufficient balance",
+			"required": req.FromAmount,
+			"available": availableBalance.InexactFloat64(),
+		})
+		return
+	}
+
+	// Generate transaction ID
+	transactionID := s.generateTxID()
+	log.Printf("🆔 [CONVERSION] Generated transaction ID: %s", transactionID)
+
+	// Deduct from source currency wallet
+	log.Printf("💸 [CONVERSION] Deducting %s %s from wallet...", fromAmountDecimal.String(), req.FromCurrency)
+	result, err := tx.Exec(`
+		UPDATE wallets 
+		SET balance = balance - $3, updated_at = NOW()
+		WHERE user_id = $1 AND currency = $2
+	`, userID, req.FromCurrency, fromAmountDecimal)
+	
+	if err != nil {
+		log.Printf("❌ [CONVERSION] Failed to deduct from source wallet: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to deduct from source wallet", 
+			"details": err.Error(),
+			"from_amount": req.FromAmount,
+			"user_id": userID,
+			"currency": req.FromCurrency,
+		})
+		return
+	}
+	
+	rowsAffected, _ := result.RowsAffected()
+	log.Printf("✅ [CONVERSION] Deducted %s %s (rows affected: %d)", fromAmountDecimal.String(), req.FromCurrency, rowsAffected)
+
+	// Add to target currency wallet
+	toAmountDecimal := decimal.NewFromFloat(req.ToAmount)
+	log.Printf("💰 [CONVERSION] Adding %s %s to wallet...", toAmountDecimal.String(), req.ToCurrency)
+	result, err = tx.Exec(`
+		INSERT INTO wallets (user_id, currency, balance, locked_balance, updated_at)
+		VALUES ($1, $2, $3, 0, NOW())
+		ON CONFLICT (user_id, currency)
+		DO UPDATE SET
+			balance = wallets.balance + $3,
+			updated_at = NOW()
+	`, userID, req.ToCurrency, toAmountDecimal)
+	
+	if err != nil {
+		log.Printf("❌ [CONVERSION] Failed to add to target wallet: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to add to target wallet",
+			"details": err.Error(),
+		})
+		return
+	}
+	
+	rowsAffected, _ = result.RowsAffected()
+	log.Printf("✅ [CONVERSION] Added %s %s (rows affected: %d)", toAmountDecimal.String(), req.ToCurrency, rowsAffected)
+
+	// Record the conversion transaction (debit from source currency)
+	metadata := fmt.Sprintf(`{"conversion": true, "from_currency": "%s", "to_currency": "%s", "from_amount": %.4f, "to_amount": %.4f, "rate": %.6f}`,
+		req.FromCurrency, req.ToCurrency, req.FromAmount, req.ToAmount, req.Rate)
+	
+	log.Printf("📝 [CONVERSION] Recording debit transaction: %s %s", fromAmountDecimal.String(), req.FromCurrency)
+	_, err = tx.Exec(`
+		INSERT INTO transactions (id, user_id, type, transaction_type, currency, amount, status, method, payment_method, metadata, created_at, updated_at)
+		VALUES ($1, $2, 'TRANSFER_OUT', 'TRANSFER_OUT', $3, $4, 'COMPLETED', 'INTERNAL', 'INTERNAL', $5, NOW(), NOW())
+	`, transactionID, userID, req.FromCurrency, fromAmountDecimal, metadata)
+
+	if err != nil {
+		log.Printf("❌ [CONVERSION] Failed to record conversion transaction: %v", err)
+		log.Printf("❌ [CONVERSION] Transaction data: id=%s, user=%s, currency=%s, amount=%s", 
+			transactionID, userID, req.FromCurrency, fromAmountDecimal.String())
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to record conversion transaction",
+			"details": err.Error(),
+		})
+		return
+	}
+	log.Printf("✅ [CONVERSION] Recorded debit transaction: %s", transactionID)
+
+	// Record the target currency transaction (credit to target currency)
+	targetTransactionID := s.generateTxID()
+	targetMetadata := fmt.Sprintf(`{"conversion": true, "from_currency": "%s", "to_currency": "%s", "from_amount": %.4f, "to_amount": %.4f, "rate": %.6f, "source_tx": "%s"}`,
+		req.FromCurrency, req.ToCurrency, req.FromAmount, req.ToAmount, req.Rate, transactionID)
+	
+	log.Printf("📝 [CONVERSION] Recording credit transaction: %s %s", toAmountDecimal.String(), req.ToCurrency)
+	_, err = tx.Exec(`
+		INSERT INTO transactions (id, user_id, type, transaction_type, currency, amount, status, method, payment_method, metadata, created_at, updated_at)
+		VALUES ($1, $2, 'TRANSFER_IN', 'TRANSFER_IN', $3, $4, 'COMPLETED', 'INTERNAL', 'INTERNAL', $5, NOW(), NOW())
+	`, targetTransactionID, userID, req.ToCurrency, toAmountDecimal, targetMetadata)
+
+	if err != nil {
+		log.Printf("❌ [CONVERSION] Failed to record target transaction: %v", err)
+		log.Printf("❌ [CONVERSION] Target transaction data: id=%s, user=%s, currency=%s, amount=%s", 
+			targetTransactionID, userID, req.ToCurrency, toAmountDecimal.String())
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to record target transaction",
+			"details": err.Error(),
+		})
+		return
+	}
+	log.Printf("✅ [CONVERSION] Recorded credit transaction: %s", targetTransactionID)
+
+	// Commit transaction
+	log.Printf("💾 [CONVERSION] Committing transaction...")
+	if err := tx.Commit(); err != nil {
+		log.Printf("❌ [CONVERSION] Failed to commit transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to commit conversion",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	log.Printf("🎉 [CONVERSION] SUCCESS: Converted %.4f %s -> %.4f %s (rate: %.6f)", 
+		req.FromAmount, req.FromCurrency, req.ToAmount, req.ToCurrency, req.Rate)
+
+	c.JSON(http.StatusOK, gin.H{
+		"transaction_id": transactionID,
+		"target_transaction_id": targetTransactionID,
+		"from_currency": req.FromCurrency,
+		"to_currency": req.ToCurrency,
+		"from_amount": req.FromAmount,
+		"to_amount": req.ToAmount,
+		"rate": req.Rate,
+		"status": "COMPLETED",
+	})
 }
 
 func (s *Server) authMiddleware() gin.HandlerFunc {

@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API Configuration
-const API_BASE_URL = 'http://192.168.1.100:3000'; // Change to your API URL
+const API_BASE_URL = 'http://192.168.1.77:8080'; // API URL for mobile testing
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -27,19 +27,36 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    console.error('API Error:', error);
+    
     if (error.response?.status === 401) {
       // Token expired, redirect to login
       await AsyncStorage.multiRemove(['auth_token', 'user_id']);
       // Navigation will be handled by the app state
     }
-    return Promise.reject(error.response?.data || error);
+    
+    // Enhanced error information
+    const enhancedError = {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      url: error.config?.url,
+      method: error.config?.method,
+      baseURL: error.config?.baseURL,
+      timeout: error.config?.timeout,
+      headers: error.config?.headers,
+      originalError: error
+    };
+    
+    return Promise.reject(enhancedError);
   }
 );
 
 // Auth Service
 export const authService = {
   login: async (email: string, password: string) => {
-    const response = await api.post('/api/v1/auth/login', { email, password });
+    const response = await api.post('/api/v1/login', { email, password });
     return response.data;
   },
 
@@ -50,13 +67,13 @@ export const authService = {
     last_name: string;
     phone?: string;
   }) => {
-    const response = await api.post('/api/v1/auth/register', userData);
+    const response = await api.post('/api/v1/register', userData);
     return response.data;
   },
 
   logout: async () => {
     try {
-      await api.post('/api/v1/auth/logout');
+      await api.post('/api/v1/logout');
     } catch (error) {
       // Ignore errors on logout
     } finally {
@@ -65,7 +82,7 @@ export const authService = {
   },
 
   getProfile: async () => {
-    const response = await api.get('/api/v1/auth/profile');
+    const response = await api.get('/api/v1/me');
     return response.data;
   },
 };
@@ -77,60 +94,164 @@ export const walletService = {
     return response.data;
   },
 
-  getTransactions: async (limit = 20) => {
-    const response = await api.get(`/api/v1/wallet/transactions?limit=${limit}`);
+  getWallets: async () => {
+    const response = await api.get('/api/v1/wallets');
     return response.data;
   },
 
-  deposit: async (amount: number, bank_code: string, account_number: string) => {
-    const response = await api.post('/api/v1/wallet/deposit', {
-      amount,
-      bank_code,
-      account_number,
-    });
+  getTransactions: async (params?: { limit?: number; offset?: number; currency?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.offset) queryParams.append('offset', params.offset.toString());
+    if (params?.currency) queryParams.append('currency', params.currency);
+    
+    const response = await api.get(`/api/v1/transactions?${queryParams.toString()}`);
     return response.data;
   },
 
-  withdraw: async (amount: number, bank_code: string, account_number: string) => {
-    const response = await api.post('/api/v1/wallet/withdraw', {
-      amount,
-      bank_code,
-      account_number,
-    });
+  deposit: async (data: {
+    currency: string;
+    amount: number;
+    method: string;
+    first_name: string;
+    last_name: string;
+  }) => {
+    const response = await api.post('/api/v1/deposit', data);
+    return response.data;
+  },
+
+  withdraw: async (data: {
+    currency: string;
+    amount: number;
+    method: string;
+    destination: {
+      account_holder: string;
+      bank: string;
+      account_number: string;
+    };
+  }) => {
+    const response = await api.post('/api/v1/withdraw', data);
+    return response.data;
+  },
+
+  transfer: async (data: {
+    to_user_id: string;
+    amount: number;
+    currency: string;
+    description?: string;
+  }) => {
+    const response = await api.post('/api/v1/transfer', data);
+    return response.data;
+  },
+
+  convertCurrency: async (data: {
+    from_currency: string;
+    to_currency: string;
+    from_amount: number;
+    to_amount: number;
+    rate: number;
+  }) => {
+    const response = await api.post('/api/v1/convert', data);
+    return response.data;
+  },
+
+  getExchangeRates: async () => {
+    const response = await api.get('/api/v1/rates');
     return response.data;
   },
 };
 
 // P2P Service
 export const p2pService = {
-  getOrders: async (type?: 'BUY' | 'SELL') => {
-    const typeParam = type ? `?type=${type}` : '';
-    const response = await api.get(`/api/v1/p2p/orders${typeParam}`);
+  getOrders: async (params?: {
+    currency_from?: string;
+    currency_to?: string;
+    type?: 'BUY' | 'SELL';
+    limit?: number;
+    offset?: number;
+  }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.currency_from) queryParams.append('currency_from', params.currency_from);
+    if (params?.currency_to) queryParams.append('currency_to', params.currency_to);
+    if (params?.type) queryParams.append('type', params.type);
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.offset) queryParams.append('offset', params.offset.toString());
+    
+    const response = await api.get(`/api/v1/orders?${queryParams.toString()}`);
+    return response.data;
+  },
+
+  getRates: async () => {
+    const response = await api.get('/api/v1/rates');
     return response.data;
   },
 
   createOrder: async (orderData: {
     type: 'BUY' | 'SELL';
-    crypto_currency: string;
-    fiat_currency: string;
+    currency_from: string;
+    currency_to: string;
     amount: number;
-    price: number;
-    payment_method: string;
+    rate: number;
+    min_amount: number;
+    max_amount: number;
+    payment_methods: string[];
     terms?: string;
   }) => {
-    const response = await api.post('/api/v1/p2p/orders', orderData);
+    const response = await api.post('/api/v1/orders', orderData);
     return response.data;
   },
 
   getMyOrders: async () => {
-    const response = await api.get('/api/v1/p2p/my-orders');
+    const response = await api.get('/api/v1/user/orders');
+    return response.data;
+  },
+
+  getOrder: async (orderId: string) => {
+    const response = await api.get(`/api/v1/orders/${orderId}`);
     return response.data;
   },
 
   executeOrder: async (orderId: string, amount: number) => {
-    const response = await api.post(`/api/v1/p2p/orders/${orderId}/execute`, {
+    const response = await api.post(`/api/v1/trade`, {
+      order_id: orderId,
       amount,
     });
+    return response.data;
+  },
+
+  cancelOrder: async (orderId: string) => {
+    const response = await api.delete(`/api/v1/orders/${orderId}`);
+    return response.data;
+  },
+
+  acceptOrder: async (orderId: string, amount: number) => {
+    const response = await api.post(`/api/v1/orders/${orderId}/mark-paid`, {
+      amount,
+    });
+    return response.data;
+  },
+
+  getTransactions: async (params?: { limit?: number; status?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.status) queryParams.append('status', params.status);
+    
+    const response = await api.get(`/api/v1/transactions?${queryParams.toString()}`);
+    return response.data;
+  },
+
+  getTransaction: async (transactionId: string) => {
+    const response = await api.get(`/api/v1/transactions/${transactionId}`);
+    return response.data;
+  },
+
+  completeTransaction: async (transactionId: string) => {
+    const response = await api.post(`/api/v1/transactions/${transactionId}/complete`);
+    return response.data;
+  },
+
+  releaseEscrow: async (transactionId: string) => {
+    const response = await api.post(`/api/v1/transactions/${transactionId}/release`);
     return response.data;
   },
 };
@@ -259,5 +380,80 @@ export const disputeService = {
     return response.data;
   },
 };
+
+// Types
+export interface WalletBalance {
+  currency: string;
+  balance: string | number;
+  locked_balance: string | number;
+}
+
+export interface Transaction {
+  id: string;
+  type: string;
+  amount: string | number;
+  currency: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  description?: string;
+  from_user_id?: string;
+  to_user_id?: string;
+  transaction_hash?: string;
+}
+
+export interface Order {
+  id: string;
+  user_id: string;
+  type: 'BUY' | 'SELL';
+  currency_from: string;
+  currency_to: string;
+  amount: number;
+  remaining_amount: number;
+  rate: number;
+  min_amount: number;
+  max_amount: number;
+  payment_methods: string[];
+  status: string;
+  terms?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface P2PTransaction {
+  id: string;
+  order_id: string;
+  buyer_id: string;
+  seller_id: string;
+  amount: number;
+  rate: number;
+  total_amount: number;
+  currency_from: string;
+  currency_to: string;
+  status: string;
+  payment_method: string;
+  created_at: string;
+  updated_at: string;
+  chat_room_id?: string;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone?: string;
+  is_verified: boolean;
+  kyc_level: number;
+  created_at: string;
+}
+
+export interface KYCStatus {
+  level: number;
+  status: string;
+  verified: boolean;
+  documents: any[];
+  requirements: any[];
+}
 
 export default api;

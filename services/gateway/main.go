@@ -59,7 +59,7 @@ func (g *Gateway) configureServices() {
     // Wallet service
     walletURL, _ := url.Parse(os.Getenv("WALLET_SERVICE_URL"))
     if walletURL == nil {
-        walletURL, _ = url.Parse("http://p2p-wallet:3003")
+        walletURL, _ = url.Parse("http://wallet:3003")
     }
     g.services["wallet"] = walletURL
 
@@ -166,6 +166,7 @@ func (g *Gateway) setupRoutes() {
         api.GET("/deposit-qr/:currency", g.proxyToService("wallet"))
         api.POST("/withdraw", g.proxyToService("wallet"))
         api.POST("/transfer", g.proxyToService("wallet"))
+        api.POST("/convert", g.proxyToService("wallet"))
         api.GET("/transactions", g.proxyToService("wallet"))
         api.GET("/transactions/:id", g.proxyToService("wallet"))
         api.POST("/webhooks/paypal", g.proxyToService("wallet"))

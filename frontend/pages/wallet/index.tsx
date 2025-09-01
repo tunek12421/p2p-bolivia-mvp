@@ -149,13 +149,8 @@ export default function WalletPage() {
     setSelectedWallet(wallet)
     setModalType('deposit')
     
-    // Determine which modal to open based on currency
-    if (wallet.currency === 'USDT') {
-      setIsQRModalOpen(true)
-    } else {
-      // BOB or USD use bank transfer
-      setIsBankModalOpen(true)
-    }
+    // All currencies now use bank transfer modal with BOB conversion
+    setIsBankModalOpen(true)
   }
 
   const handleWithdrawClick = (wallet: WalletBalance) => {
@@ -177,11 +172,18 @@ export default function WalletPage() {
   }
 
   const getPaymentMethodText = (currency: string, type: 'deposit' | 'withdrawal') => {
-    if (currency === 'USDT') {
-      if (type === 'deposit') return 'Código QR / Red TRC20'
-      return 'Próximamente disponible'
+    if (type === 'deposit') {
+      if (currency === 'BOB') {
+        return 'Transferencia bancaria'
+      } else {
+        return 'Conversión desde BOB'
+      }
     } else {
-      return 'Transferencia bancaria'
+      if (currency === 'USDT') {
+        return 'Próximamente disponible'
+      } else {
+        return 'Transferencia bancaria'
+      }
     }
   }
 
@@ -192,6 +194,14 @@ export default function WalletPage() {
 
   const handleModalSuccess = () => {
     fetchWalletData() // Actualizar datos después de una transacción exitosa
+  }
+
+  const getBobBalance = (): number => {
+    const bobWallet = wallets.find(w => w.currency === 'BOB')
+    if (!bobWallet) return 0
+    const balance = typeof bobWallet.balance === 'string' ? parseFloat(bobWallet.balance) : bobWallet.balance
+    const lockedBalance = typeof bobWallet.locked_balance === 'string' ? parseFloat(bobWallet.locked_balance) : bobWallet.locked_balance
+    return balance - lockedBalance
   }
 
   if (isLoading) {
@@ -456,6 +466,7 @@ export default function WalletPage() {
             type={modalType}
             onSuccess={handleModalSuccess}
             availableBalance={(typeof selectedWallet.balance === 'string' ? parseFloat(selectedWallet.balance) : selectedWallet.balance) - (typeof selectedWallet.locked_balance === 'string' ? parseFloat(selectedWallet.locked_balance) : selectedWallet.locked_balance)}
+            bobBalance={getBobBalance()}
           />
           
           <QRModal

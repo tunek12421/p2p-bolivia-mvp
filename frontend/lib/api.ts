@@ -265,6 +265,32 @@ export const walletAPI = {
     amount: number
     recipient_id: string
   }) => api.post('/api/v1/transfer', data),
+
+  convertCurrency: (data: {
+    from_currency: string
+    to_currency: string
+    from_amount: number
+    to_amount: number
+    rate: number
+  }) => {
+    console.log('📡 [API] walletAPI.convertCurrency llamado:', data)
+    const promise = api.post('/api/v1/convert', data)
+    promise.then(response => {
+      console.log('✅ [API] walletAPI.convertCurrency respuesta exitosa:', {
+        status: response.status,
+        data: response.data,
+        transactionId: response.data?.transaction_id
+      })
+    }).catch(error => {
+      console.error('❌ [API] walletAPI.convertCurrency error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        requestData: data
+      })
+    })
+    return promise
+  },
   
   getRates: () => api.get('/api/v1/rates'),
 }

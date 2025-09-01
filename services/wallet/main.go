@@ -111,6 +111,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/deposit", s.authMiddleware(), s.handleDeposit)
 		api.POST("/withdraw", s.authMiddleware(), s.handleWithdrawal)
 		api.POST("/transfer", s.authMiddleware(), s.handleTransfer)
+		api.POST("/convert", s.authMiddleware(), s.handleConvert)
 		
 		// Bank integration endpoints
 		api.GET("/deposit-instructions/:currency", s.authMiddleware(), s.handleGetDepositInstructions)
