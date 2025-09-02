@@ -1,206 +1,78 @@
-# 🚀 P2P Bolivia - Sistema de Intercambio de Divisas
+# P2P Bolivia
 
+[![Demo](https://img.shields.io/badge/Demo-YouTube-red.svg)](https://www.youtube.com/watch?v=wyg0lBBqoUc)
 [![Go](https://img.shields.io/badge/Go-1.21-blue.svg)](https://golang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)](https://docker.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue.svg)](https://postgresql.org/)
-[![Redis](https://img.shields.io/badge/Redis-7-red.svg)](https://redis.io/)
+[![React Native](https://img.shields.io/badge/React%20Native-latest-blue.svg)](https://reactnative.dev/)
 
-> Sistema P2P completo para intercambio de divisas en Bolivia con motor de matching en tiempo real, gestión de wallets y integración bancaria.
+Plataforma P2P para intercambio de divisas (BOB/USD/USDT) con validación bancaria automática y chat en tiempo real.
 
-## 🎯 **Descripción**
+**Stack:** Go microservices, Next.js web, React Native mobile, PostgreSQL, Redis, WebSockets
 
-P2P Bolivia es una plataforma moderna de intercambio de divisas que permite a usuarios comprar y vender USD, BOB y USDT de forma segura y eficiente. El sistema incluye un motor de matching automático, gestión de wallets multi-moneda y sistema de pagos integrado.
+## Características
 
-## ✨ **Características Principales**
+- **Motor P2P** - Matching automático de órdenes compra/venta
+- **Multi-billeteras** - BOB, USD, USDT generadas automáticamente  
+- **Validación bancaria** - Detección automática de pagos via notificaciones
+- **Chat temporal** - WebSocket entre comprador y cajero
+- **Híbrido** - Web (Next.js) + Mobile (React Native)
+- **Tasas en vivo** - Integración con API Binance
 
-- 🔄 **Motor P2P en tiempo real** - Matching automático de órdenes
-- 💰 **Multi-moneda** - Soporte para BOB, USD, USDT
-- 🔐 **Autenticación segura** - JWT tokens y 2FA
-- 🏦 **Integración bancaria** - Notificaciones automáticas
-- 📱 **API REST completa** - Documentada y lista para frontend
-- 🐳 **Dockerizado** - Fácil deployment y escalabilidad
-- 📊 **Monitoreo** - Redis, RabbitMQ, PostgreSQL
+## Flujo de Usuario
 
-## 🏗️ **Arquitectura**
+1. **Registro** → Billeteras BOB/USD/USDT creadas automáticamente
+2. **Depósito** → Pago con QR → Validación automática via notificaciones bancarias  
+3. **Trading** → Crear orden compra/venta → Match automático con cajeros
+4. **Chat** → Comunicación WebSocket temporal entre partes
+5. **Confirmación** → Transferencia instantánea de fondos
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   API Gateway   │    │   Auth Service  │
-│   (Next.js)     │◄──►│   (Go/Gin)      │◄──►│   (Go/Gin)      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                 ▲
-                                 ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   P2P Engine    │    │ Wallet Service  │    │ Bank Listener   │
-│   (Go/Gin)      │◄──►│   (Go/Gin)      │◄──►│   (Go/Gin)      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         ▲                       ▲                       ▲
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   PostgreSQL    │    │     Redis       │    │   RabbitMQ      │
-│   (Database)    │    │    (Cache)      │    │   (Queue)       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+## Inicio Rápido
 
-## 🚀 **Inicio Rápido**
-
-### Prerrequisitos
-- Docker & Docker Compose
-- Git
-
-### 1. Clonar el repositorio
 ```bash
-git clone <tu-repositorio>
-cd airtm
-```
-
-### 2. Levantar el sistema
-```bash
+# Clonar y ejecutar
+git clone <repo>
 cd p2p-bolivia-mvp
 ./quick-start.sh
-```
 
-### 3. Verificar que funciona
-```bash
-cd ..
+# Verificar
 ./test-phase2.sh
 ```
 
-## 🔧 **Servicios Disponibles**
+## Servicios
 
-| Servicio | Puerto | Descripción |
-|----------|--------|-------------|
-| **Gateway** | 8080 | API Gateway principal |
-| **Auth** | 3001 | Autenticación y usuarios |
-| **P2P Engine** | 3002 | Motor de matching |
-| **Wallet** | 3003 | Gestión de wallets |
-| **Bank Listener** | 3004 | Notificaciones bancarias |
-| **PostgreSQL** | 5432 | Base de datos |
-| **Redis** | 6379 | Cache y sesiones |
-| **RabbitMQ** | 15672 | Colas de mensajes |
+| Puerto | Servicio | Función |
+|--------|----------|---------|
+| 8080 | Gateway | API principal |
+| 3002 | P2P Engine | Motor de matching |
+| 3003 | Wallet | Gestión de billeteras |
+| 3004 | Bank Listener | Validación de pagos |
 
-## 📚 **API Endpoints**
+## API Principal
 
-### Autenticación
 ```bash
-POST /api/v1/register    # Registro de usuario
+POST /api/v1/register    # Registro
 POST /api/v1/login       # Login
-```
-
-### P2P Trading
-```bash
-GET  /api/v1/orders      # Listar órdenes
+GET  /api/v1/orders      # Órdenes
 POST /api/v1/orders      # Crear orden
-GET  /api/v1/orderbook   # Libro de órdenes
-GET  /api/v1/rates       # Tipos de cambio
+GET  /api/v1/wallets     # Billeteras
+POST /api/v1/deposit     # Depósito
 ```
 
-### Wallets
-```bash
-GET  /api/v1/wallets     # Obtener wallets
-POST /api/v1/deposit     # Depositar
-POST /api/v1/withdraw    # Retirar
-```
-
-## 🧪 **Testing**
+## Desarrollo
 
 ```bash
-# Test completo del sistema
-./test-phase2.sh
-
-# Health checks individuales
-curl http://localhost:8080/health
-curl http://localhost:3002/health
-
-# Ver logs en tiempo real
-cd p2p-bolivia-mvp
+# Ver logs
 docker compose logs -f
-```
 
-## 🛠️ **Desarrollo**
-
-### Estructura del Proyecto
-```
-p2p-bolivia-mvp/
-├── services/           # Microservicios backend
-│   ├── auth/          # Servicio de autenticación  
-│   ├── p2p/           # Motor P2P (Fase 2)
-│   ├── wallet/        # Gestión de wallets
-│   ├── gateway/       # API Gateway
-│   └── bank-listener/ # Listener bancario
-├── frontend/          # Frontend Next.js
-├── migrations/        # Migraciones de DB
-└── docker-compose.yml # Configuración Docker
-```
-
-### Comandos Útiles
-```bash
-# Rebuildar servicios
+# Rebuildar
 docker compose build
 
-# Ver estado de servicios  
-docker compose ps
-
-# Reiniciar un servicio específico
-docker compose restart p2p
-
-# Acceder a la base de datos
+# Base de datos
 docker exec -it p2p-postgres psql -U p2padmin -d p2p_bolivia
 ```
 
-## 📊 **Monitoreo**
-
-- **RabbitMQ Management**: http://localhost:15672 (admin/admin)
-- **Database**: Acceso via psql o pgAdmin
-- **Logs**: `docker compose logs -f [servicio]`
-
-## 🔐 **Seguridad**
-
-- ✅ JWT authentication con refresh tokens
-- ✅ Validación de entrada en todos los endpoints
-- ✅ Rate limiting (a implementar)
-- ✅ Encriptación de contraseñas con bcrypt
-- ✅ Variables de entorno para secretos
-
-## 🚧 **Roadmap**
-
-### ✅ Fase 1 - MVP Básico
-- Sistema de usuarios y auth
-- Base de datos y migraciones
-- Dockerización completa
-
-### ✅ Fase 2 - Motor P2P (Actual)
-- Motor de matching en tiempo real
-- Sistema de órdenes buy/sell
-- API REST completa
-- Testing automatizado
-
-### 🔄 Fase 3 - Próxima
-- [ ] Sistema KYC completo
-- [ ] Sistema de disputas
-- [ ] Chat entre usuarios
-- [ ] Mobile app (React Native)
-- [ ] Optimizaciones de performance
-
-## 🤝 **Contribuir**
-
-1. Fork el proyecto
-2. Crea una rama feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
-
-## 📄 **Licencia**
-
-Este proyecto está bajo la Licencia MIT. Ver `LICENSE` para más detalles.
-
-## 📞 **Soporte**
-
-- 📧 Email: [tu-email]
-- 💬 Issues: [GitHub Issues]
-- 📖 Docs: Ver `README-FASE2.md` para detalles técnicos
+**Estructura:** `services/` (Go microservices), `frontend/` (Next.js), `migrations/` (SQL)
 
 ---
 
-**Desarrollado con ❤️ para Bolivia** 🇧🇴
+**🎥 [Ver Demo](https://www.youtube.com/watch?v=wyg0lBBqoUc)** | **Desarrollado para Bolivia** 🇧🇴
